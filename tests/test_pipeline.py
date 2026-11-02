@@ -39,9 +39,16 @@ class StubClient(LLMClient):
         self.calls = []
 
     def complete(
-        self, messages, model, temperature=0, max_output_tokens=1024, context=None
+        self, messages, model, temperature=0, max_output_tokens=1024, context=None, params=None
     ):
-        self.calls.append({"model": model, "stage": (context or {}).get("stage"), "messages": messages})
+        self.calls.append(
+            {
+                "model": model,
+                "stage": (context or {}).get("stage"),
+                "messages": messages,
+                "params": params,
+            }
+        )
         text = self.answers.pop(0) if self.answers else "no answer"
         return LLMResponse(text=text, model=model, prompt_tokens=100, completion_tokens=20)
 
@@ -371,3 +378,59 @@ class TestTextFormat:
         assert "Classification:" in repair_message
         assert "single JSON object" not in repair_message
         assert result.stats.completed == 1
+
+
+class TestStageParams:
+    """DeepSeek needs thinking off for Stage-1 and on for Stage-2 (same model)."""
+
+    def _setup(self, tmp_path, records_path):
+        return write_config(
+            tmp_path,
+            records_path,
+            llm={
+                "stage1_params": {"reasoning_effort": "none"},
+                "stage2_params": {"reasoning_effort": "high"},
+                "model_params": {"stub-model": {"top_p": 0.9}},
+            },
+        )
+
+    @staticmethod
+    def _prompts():
+        return PromptSet.load(
+            PROMPTS_DIR / "stage1_v2_original.md",
+            PROMPTS_DIR / "stage2_v2_original.md",
+            "v2-paper-2026-11",
+            output_format="text",
+        )
+
+    def test_each_stage_receives_its_own_parameters(self, tmp_path, records_path):
+        config = self._setup(tmp_path, records_path)
+        client = StubClient([PAPER_STAGE1, PAPER_STAGE2_PARTLY])
+        make_pipeline(config, client, self._prompts()).run([make_record("a")])
+
+        assert [call["stage"] for call in client.calls] == ["stage1", "stage2"]
+        assert client.calls[0]["params"] == {"reasoning_effort": "none"}
+        assert client.calls[1]["params"] == {"reasoning_effort": "high"}
+
+    def test_repair_calls_reuse_the_stage_parameters(self, tmp_path, records_path):
+        config = self._setup(tmp_path, records_path)
+        client = StubClient(["no classification here", PAPER_STAGE1, PAPER_STAGE2_PARTLY])
+        make_pipeline(config, client, self._prompts()).run([make_record("a")])
+
+        assert client.calls[1]["stage"] == "stage1-repair"
+        assert client.calls[1]["params"] == {"reasoning_effort": "none"}
+
+    def test_stage_parameters_change_the_cache_key(self, tmp_path, records_path):
+        config = self._setup(tmp_path, records_path)
+        pipeline = make_pipeline(config, StubClient([]), self._prompts())
+        base = dict(
+            model="m",
+            temperature=0,
+            max_output_tokens=512,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        thinking = ResponseCache.make_key(params={"reasoning_effort": "high"}, **base)
+        plain = ResponseCache.make_key(params={"reasoning_effort": "none"}, **base)
+        assert thinking != plain
+        assert pipeline._stage_params("stage2") == {"reasoning_effort": "high"}
+        assert pipeline._stage_params("stage1-repair") == {"reasoning_effort": "none"}

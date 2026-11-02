@@ -80,8 +80,9 @@ DEV-xx | 类别（数据/方法/实现/环境） | 论文做法 → 本项目做
 - **类别**：实现
 - **论文做法**：未涉及。
 - **本项目做法**：`llm.budget.prices_per_1m_tokens` 内置 gpt-4.1 `$2/$8`、o3-mini `$1.1/$4.4`、
-  o4-mini `$1.1/$4.4`、deepseek-chat `$0.28/$0.42`、deepseek-reasoner `$0.55/$2.19`、
-  qwen-plus `$0.11/$0.28`、qwen-max `$0.34/$1.37`（每百万 token，2025 快照）。
+  o4-mini `$1.1/$4.4`、deepseek-flash `$0.30/$1.20`、deepseek-v4-pro `$1.32/$3.96`（均为 2026-11 官方
+  峰值时价）、deepseek-chat `$0.28/$0.42`、deepseek-reasoner `$0.55/$2.19`（旧名，保留兼容）、
+  qwen-plus `$0.11/$0.28`、qwen-max `$0.34/$1.37`（每百万 token）。
 - **原因**：费用只用于预算拦截与报告，不参与科学结论；接口查询只能拿到摘要页，无法确认逐项单价，
   故不编造精度、只保留数量级。
 - **影响**：若官方调价，`cost_usd` 会偏差；模型名未命中价格表时回退 `default_price`。
@@ -134,17 +135,21 @@ DEV-xx | 类别（数据/方法/实现/环境） | 论文做法 → 本项目做
 - **论文做法**：Stage-1 GPT-4.1、Stage-2 o3-mini（temperature=0）；Table VII 还对比了
   deepseek-v3 / deepseek-r1（Stage-2 最高 95.4%）等模型。
 - **本项目做法**：`swep.providers` 内置 `openai` / `deepseek` / `qwen` 三个 OpenAI 兼容端点，
-  `config/config.deepseek.yaml`（`deepseek-chat` + `deepseek-reasoner`）与
-  `config/config.qwen.yaml`（`qwen-plus` + `qwen-max`）使用与论文**同一套原版 prompt**。
-  附录的 `call_llm/registry.py` 本身就把 deepseek-v3（`deepseek_native`, `deepseek-chat`）与
-  deepseek-r1（`deepseek-reasoner`）当作一等公民，所以这条路是论文作者走过的，不是我们临时发明。
+  `config/config.deepseek.yaml`（2026-11 API 的 `deepseek-flash`；如需更强 Stage-2 可换
+  `deepseek-v4-pro`）与 `config/config.qwen.yaml`（`qwen-plus` + `qwen-max`）使用与论文**同一套原版 prompt**。
+  附录的 `call_llm/registry.py` 本身就把 deepseek-v3（`deepseek_native`）与 deepseek-r1 当作一等公民，
+  所以这条路是论文作者走过的，不是我们临时发明。
 - **原因**：中国大陆访问 OpenAI 困难；团队没有 OpenAI key。
-- **影响**：模型不同 → 与 Table VII 的 86.1%/74.6% 不可直接比较；但同一 prompt + 同一解析器 + 同一
+- **影响一（模型不同）**：与 Table VII 的 86.1%/74.6% 不可直接比较；但同一 prompt + 同一解析器 + 同一
   gold 集，可以把"prompt 移植是否成功"与"模型差异"分开讨论。deepseek-v3 / r1 恰好是论文报告过的模型，
   因此结果仍可放进论文的模型对比表作为参照行。
+- **影响二（temperature）**：DeepSeek 思考模式下 `temperature` 失效（官方文档明示"无实际效果"）。
+  我们的配置是 Stage-1 关思考（`reasoning_effort: none`，`temperature=0` 仍生效、与论文一致），
+  Stage-2 开思考（`reasoning_effort: high`，`temperature` 不发）。论文的 Stage-2 用 o3-mini 同样
+  不接受 `temperature`，因此这一点与论文的 Stage-2 观测条件基本对齐。
 - **缓解/下一步**：若日后拿到 OpenAI key，用 `config/config.openai.yaml` 跑同一批数据做对照；
-  报告中明确写"标注模型：deepseek-chat + deepseek-reasoner（论文等价模型）"。
-- **状态**：设计内替代（2026-11-02），需在报告中单列。
+  报告中明确写"标注模型：deepseek-flash（Stage-1 无思考 / Stage-2 思考）"。
+- **状态**：设计内替代（2026-11-02 按 DeepSeek 2026-11 模型名更新），需在报告中单列。
 
 ### DEV-10 · gold 二分类占比与论文 RQ3 描述的差异（已查明：不是同一份总体）
 

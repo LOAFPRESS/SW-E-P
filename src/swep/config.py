@@ -53,6 +53,8 @@ DEFAULTS: Dict[str, Any] = {
         "max_output_tokens": 1024,
         "timeout_s": 60,
         "model_params": {},
+        "stage1_params": {},
+        "stage2_params": {},
         "retry": {
             "max_attempts": 5,
             "base_delay_s": 2.0,
@@ -61,10 +63,15 @@ DEFAULTS: Dict[str, Any] = {
         },
         "budget": {
             "max_usd": 5.0,
+            "estimated_output_tokens": None,
             "prices_per_1m_tokens": {
                 "gpt-4.1": {"input": 2.0, "output": 8.0},
                 "o3-mini": {"input": 1.1, "output": 4.4},
                 "o4-mini": {"input": 1.1, "output": 4.4},
+                # DeepSeek 2026-11 price list (peak-hour, USD per 1M tokens).
+                "deepseek-flash": {"input": 0.30, "output": 1.20},
+                "deepseek-v4-pro": {"input": 1.32, "output": 3.96},
+                # Legacy DeepSeek names, kept so old configs still price correctly.
                 "deepseek-chat": {"input": 0.28, "output": 0.42},
                 "deepseek-reasoner": {"input": 0.55, "output": 2.19},
                 "qwen-plus": {"input": 0.11, "output": 0.28},
@@ -248,6 +255,12 @@ class Config:
             )
         if not isinstance(self.get("llm.model_params", {}), dict):
             raise ConfigError("llm.model_params must be a mapping of model -> request parameters")
+        for key in ("llm.stage1_params", "llm.stage2_params"):
+            if not isinstance(self.get(key, {}), dict):
+                raise ConfigError(
+                    "%s must be a mapping of request parameter -> value (e.g. "
+                    "reasoning_effort: high)" % key
+                )
         if self.get("data.format") not in ("auto", "jsonl", "json", "csv"):
             raise ConfigError(
                 "data.format must be one of auto/jsonl/json/csv, got %r"
@@ -265,6 +278,13 @@ class Config:
             raise ConfigError("llm.budget.max_usd must be a number or null")
         if budget is not None and budget <= 0:
             raise ConfigError("llm.budget.max_usd must be positive")
+
+        estimated = self.get("llm.budget.estimated_output_tokens", None)
+        if estimated is not None:
+            if isinstance(estimated, bool) or not isinstance(estimated, int):
+                raise ConfigError("llm.budget.estimated_output_tokens must be an integer or null")
+            if estimated <= 0:
+                raise ConfigError("llm.budget.estimated_output_tokens must be positive")
 
         if self.get("data.column_map") is None:
             self.raw["data"]["column_map"] = {}

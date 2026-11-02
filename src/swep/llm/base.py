@@ -9,11 +9,13 @@ separate and testable:
 
 ``context`` on :meth:`LLMClient.complete` carries the structured record to
 clients that need it (the mock derives deterministic labels from it).  Real
-providers ignore it, so nothing about the prompt changes.
+providers ignore it, so nothing about the prompt changes.  ``params`` carries
+per-stage request overrides (for DeepSeek, "Stage-1 thinking off, Stage-2
+thinking on") and is ignored by the mock.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 Message = Dict[str, str]
 
@@ -48,6 +50,7 @@ class LLMClient:
         temperature: float = 0,
         max_output_tokens: int = 1024,
         context: Optional[dict] = None,
+        params: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         """Return one completion for ``messages``.
 

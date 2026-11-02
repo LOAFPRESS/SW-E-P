@@ -181,6 +181,7 @@ class MockLLMClient(LLMClient):
         temperature: float = 0,
         max_output_tokens: int = 1024,
         context: Optional[dict] = None,
+        params: Optional[dict] = None,
     ) -> LLMResponse:
         self.calls += 1
         if self.failures:

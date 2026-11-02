@@ -1,64 +1,74 @@
-# Paper-faithful prompts (verbatim Zenodo appendix) + DeepSeek.
+# DeepSeek run over the 150-comment gold sample.
 #
-# Why DeepSeek: the paper's own appendix already ran deepseek-v3 (Stage-1) and
-# deepseek-r1 (Stage-2) through the same code path (call_llm/registry.py), and
-# both are reachable from mainland China without a proxy.  Table VII reports
-# Stage-1 deepseek-v3 = 94.0% and Stage-2 deepseek-r1 = 95.4% (the best Stage-2
-# model in the paper), so this pair is the closest *and* the cheapest substitute
-# for GPT-4.1 + o3-mini.  It is still a substitution and must be recorded as a
-# deviation (DEV-09 in docs/paper-deviations.md).
+# Model naming follows the DeepSeek API as documented on 2026-11: the served
+# models are `deepseek-flash` (DeepSeek-V4.1-Flash-1017) and `deepseek-v4-pro`
+# (V4-Pro-0813).  The older `deepseek-chat` / `deepseek-reasoner` aliases are no
+# longer in the documentation, so they are not used here.
 #
-# Setup:
-#   set DEEPSEEK_API_KEY=sk-...          (never put the key in this file)
-#   python run.py annotate -c config/config.deepseek.yaml --dry-run
-#   python run.py annotate -c config/config.deepseek.yaml --write-report
+# Thinking is toggled with `reasoning_effort`:
+#   * Stage-1 is a classification task -> thinking off (`none`), temperature 0,
+#     which keeps it cheap and directly comparable with the paper's gpt-4.1 pass.
+#   * Stage-2 has to reason about whether later commits implement the suggestion
+#     -> thinking on (`high`).  DeepSeek ignores `temperature` while thinking, so
+#     the paper's temperature=0 is recorded as DEV-09.
 #
-# Prices below are a 2025 snapshot used only by the cost guard; verify them
-# against https://api-docs.deepseek.com/quick_start/pricing before trusting the
-# reported dollar amount (DEV-05).
+# Stage-2 quality can be pushed further by switching `stage2_model` to
+# `deepseek-v4-pro` (input 1.32 / output 3.96 USD per 1M tokens, i.e. ~4x flash);
+# remember to raise `llm.budget.max_usd` when doing so.
+#
+# Prices are the peak-hour list prices (USD per 1M tokens) from the same page and
+# are only used by the budget guard -- check them before a real spending run.
 
 run:
-  name: gold150-deepseek-paper
+  name: gold150-deepseek
   limit: null
-  seed: 42
   abort_on_record_error: false
   log_level: INFO
 
 data:
   path: data/gold150.jsonl
-  format: auto
+  format: jsonl
 
 llm:
-  provider: deepseek            # base_url + key variable come from swep.providers
-  stage1_model: deepseek-chat   # V3: paper's Stage-1 substitute
-  stage2_model: deepseek-reasoner  # R1: paper's best Stage-2 model
+  provider: deepseek
+  base_url: null
+  api_key_env: null
+  stage1_model: deepseek-flash
+  stage2_model: deepseek-flash
   temperature: 0
-  max_output_tokens: 1500
+  max_output_tokens: 8000
   timeout_s: 600
-  max_parse_retries: 2
+  # Stage-level request overrides (they win over llm.model_params): Stage-1 runs
+  # without thinking, Stage-2 with thinking.  `high` is DeepSeek's default effort;
+  # use `max` for the hardest cases at a higher output cost.
+  stage1_params:
+    reasoning_effort: none
+  stage2_params:
+    reasoning_effort: high
   retry:
     max_attempts: 5
     base_delay_s: 2.0
     max_delay_s: 60.0
     jitter_s: 0.5
   budget:
-    max_usd: 3.0
+    max_usd: 5.0
+    estimated_output_tokens: 1500
     prices_per_1m_tokens:
-      deepseek-chat: {input: 0.28, output: 0.42}
-      deepseek-reasoner: {input: 0.55, output: 2.19}
-    default_price: {input: 0.55, output: 2.19}
+      deepseek-flash:
+        input: 0.30
+        output: 1.20
+      deepseek-v4-pro:
+        input: 1.32
+        output: 3.96
   cache:
     enabled: true
-    path: artifacts/deepseek-paper/cache.sqlite3
+    path: artifacts/cache.deepseek.sqlite3
 
 prompts:
   stage1: prompts/stage1_v2_original.md
   stage2: prompts/stage2_v2_original.md
+  format: text
   version: v2-paper-2026-11
-  format: text                  # the appendix answers with Classification: lines
 
 output:
   dir: artifacts/deepseek-paper
-  annotations_csv: annotations.csv
-  requests_jsonl: requests.jsonl
-  summary_json: summary.json

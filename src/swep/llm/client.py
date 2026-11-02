@@ -6,11 +6,14 @@ so only the base URL, the key and a few per-model parameters differ.
 
 Provider quirks handled here, each one hit while preparing the reproduction:
 
-1. **Reasoning models** (``o1*``, ``o3*``, ``o4*`` and anything configured with a
-   ``reasoning_effort`` parameter) reject ``temperature`` and the legacy
-   ``max_tokens`` parameter; they are called with ``max_completion_tokens`` and no
-   temperature.  The paper reports ``temperature=0`` for both stages, which is
-   recorded as a deviation (DOM-1.2) for Stage-2 models of this family.
+1. **Reasoning models** (``o1*``, ``o3*``, ``o4*``) reject ``temperature`` and the
+   legacy ``max_tokens``; they are called with ``max_completion_tokens`` and no
+   temperature.  DeepSeek's current models instead toggle thinking with
+   ``thinking: {type: enabled|disabled}`` (via ``extra_body``) or
+   ``reasoning_effort``, keep ``max_tokens``, and ignore ``temperature`` — so
+   thinking-mode requests also omit the temperature.  The paper reports
+   ``temperature=0`` for both stages, which is recorded as a deviation (DOM-1.2)
+   for the reasoning stages of this family.
 2. Providers occasionally reject one parameter by name; the client retries once
    with the parameter repaired instead of failing the record.
 3. Reasoning endpoints sometimes return the answer in ``reasoning_content`` with
@@ -78,8 +81,9 @@ class OpenAIClient(LLMClient):
         temperature: float = 0,
         max_output_tokens: int = 1024,
         context: Optional[dict] = None,
+        params: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
-        request = self._build_request(model, messages, temperature, max_output_tokens)
+        request = self._build_request(model, messages, temperature, max_output_tokens, params)
         started = time.perf_counter()
         response = self._create(request)
         latency_ms = (time.perf_counter() - started) * 1000.0
@@ -117,20 +121,60 @@ class OpenAIClient(LLMClient):
         )
 
     # --------------------------------------------------------------- helpers
+    @staticmethod
+    def _thinking_enabled(model: str, extra: Dict[str, Any], extra_body: Optional[dict]) -> bool:
+        """Whether the request will run in a provider "thinking"/reasoning mode.
+
+        DeepSeek (2026-11 API) exposes three equivalent switches, in decreasing
+        precedence: ``thinking: {type: enabled|disabled}`` (sent via ``extra_body``),
+        ``reasoning_effort`` (``none`` disables it), and the ``o*`` model family.
+        Thinking mode ignores ``temperature``, so we simply omit it.
+        """
+        body = extra_body if isinstance(extra_body, dict) else {}
+        thinking = body.get("thinking")
+        if isinstance(thinking, dict) and thinking.get("type"):
+            return str(thinking["type"]).lower() == "enabled"
+        effort = str(extra.get("reasoning_effort") or "").lower()
+        if effort:
+            return effort != "none"
+        return _is_reasoning_model(model)
+
     def _build_request(
-        self, model: str, messages: List[Message], temperature: float, max_output_tokens: int
+        self,
+        model: str,
+        messages: List[Message],
+        temperature: float,
+        max_output_tokens: int,
+        params: Optional[Dict[str, Any]] = None,
     ) -> dict:
-        """Assemble the request, honouring per-model parameter overrides."""
-        extra = self._model_params.get(str(model), {})
-        reasoning = _is_reasoning_model(model) or "reasoning_effort" in extra
+        """Assemble the request, honouring per-model and per-stage overrides."""
+        extra = dict(self._model_params.get(str(model), {}))
+        if params:
+            # Stage-level settings (e.g. Stage-1 thinking off, Stage-2 thinking on)
+            # win over the model defaults; ``extra_body`` dicts are merged.
+            body = extra.get("extra_body")
+            stage_body = dict(params.get("extra_body") or {})
+            base_body = dict(body) if isinstance(body, dict) else {}
+            extra.update({k: v for k, v in params.items() if k != "extra_body"})
+            if stage_body:
+                base_body.update(stage_body)
+                extra["extra_body"] = base_body
+        extra_body = extra.pop("extra_body", None)
+        thinking = self._thinking_enabled(model, extra, extra_body)
         request: Dict[str, Any] = {"model": model, "messages": messages}
-        if reasoning:
+        if _is_reasoning_model(model):
+            # OpenAI's o* family renamed the output cap; DeepSeek/Qwen keep max_tokens.
             request["max_completion_tokens"] = int(max_output_tokens)
         else:
-            request["temperature"] = float(temperature)
             request["max_tokens"] = int(max_output_tokens)
+        if not thinking:
+            request["temperature"] = float(temperature)
         for key, value in extra.items():
             request[key] = value
+        if isinstance(extra_body, dict) and extra_body:
+            merged = dict(request.get("extra_body") or {})
+            merged.update(extra_body)
+            request["extra_body"] = merged
         return request
 
     def _create(self, request: dict):

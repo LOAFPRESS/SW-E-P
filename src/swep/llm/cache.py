@@ -44,7 +44,13 @@ class ResponseCache:
 
     # ----------------------------------------------------------------- keys
     @staticmethod
-    def make_key(model: str, temperature: float, max_output_tokens: int, messages: List[dict]) -> str:
+    def make_key(
+        model: str,
+        temperature: float,
+        max_output_tokens: int,
+        messages: List[dict],
+        params: Optional[dict] = None,
+    ) -> str:
         """Stable key over everything that can change the completion."""
         canonical = json.dumps(
             {
@@ -52,6 +58,7 @@ class ResponseCache:
                 "temperature": float(temperature),
                 "max_output_tokens": int(max_output_tokens),
                 "messages": messages,
+                "params": params or {},
             },
             ensure_ascii=False,
             sort_keys=True,

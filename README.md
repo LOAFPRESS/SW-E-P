@@ -38,7 +38,7 @@ SW-E-P/
 ├── config/
 │   ├── config.yaml                # 默认配置（mock provider，离线可跑）
 │   ├── config.gold150.yaml        # 真实 150 条 gold 的 mock 冒烟
-│   ├── config.deepseek.yaml       # 真实标注：deepseek-chat + deepseek-reasoner
+│   ├── config.deepseek.yaml       # 真实标注：deepseek-flash（Stage-1 不思考 / Stage-2 思考）
 │   ├── config.qwen.yaml           # 真实标注：qwen-plus + qwen-max
 │   └── config.openai.yaml         # OpenAI 对照实验（limit: 5）
 ├── prompts/
@@ -82,12 +82,18 @@ python -m venv .venv
 .\.venv\Scripts\python.exe run.py annotate -c config/config.gold150.yaml --no-cache --write-report
 
 # C) 真实模型（DeepSeek，论文原版 prompt）
-$env:DEEPSEEK_API_KEY = "sk-..."
-.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --dry-run   # 先看成本
-.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report
+#    key 只留在你的终端环境里，不要贴进对话或写进仓库
+setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会话 $env:DEEPSEEK_API_KEY = "sk-..."
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --dry-run   # 先看成本
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache  # 3 条试跑
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report       # 150 条正式跑
 
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 241 passed
+.\.venv\Scripts\python.exe -m pytest tests -q                           # 247 passed
 ```
+
+`config/config.deepseek.yaml` 用的是 DeepSeek 2026-11 的模型名：`deepseek-flash`
+（Stage-1 关闭思考 `reasoning_effort: none`，Stage-2 打开思考 `high`）；想用更强的
+`deepseek-v4-pro` 只改 `stage2_model` 并相应提高 `llm.budget.max_usd`。
 
 Qwen 只需换 `-c config/config.qwen.yaml` 并设 `DASHSCOPE_API_KEY`；OpenAI 对照用 `config/config.openai.yaml`。
 稳定性实验：加 `--repeat 5`（自动禁用缓存，输出运行间一致率与逐次分布）。

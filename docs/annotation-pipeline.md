@@ -110,7 +110,7 @@ load_dataset → ReviewRecord.validate()
 |------|----------|------|
 | `config/config.yaml` | `mock` | 默认演示：12 条合成样例 + JSON 重建版 prompt，离线可跑 |
 | `config/config.gold150.yaml` | `mock` | **真实 150 条 gold** 的离线冒烟（`data/gold150.jsonl`），只验证管线能吞下真实数据 |
-| `config/config.deepseek.yaml` | `deepseek` | 真实标注：`deepseek-chat` + `deepseek-reasoner`，论文原版 prompt（`format: text`） |
+| `config/config.deepseek.yaml` | `deepseek` | 真实标注：`deepseek-flash`（Stage-1 不思考 / Stage-2 思考），论文原版 prompt（`format: text`） |
 | `config/config.qwen.yaml` | `qwen` | 同上，换 DashScope：`qwen-plus` + `qwen-max` |
 | `config/config.openai.yaml` | `openai` | 拿到 OpenAI key 时的对照实验（`limit: 5`） |
 
@@ -132,17 +132,28 @@ load_dataset → ReviewRecord.validate()
 | `llm.base_url` / `api_key_env` | 覆盖 provider 的端点与 key 变量；留空则用 provider 默认 | `null` / `null` |
 | `llm.stage1_model` / `stage2_model` / `temperature` | 两个阶段的模型与采样温度 | `gpt-4.1` / `o3-mini` / `0` |
 | `llm.max_output_tokens` / `timeout_s` / `max_parse_retries` | 输出上限、超时、解析修复次数 | `1024` / `60` / `2` |
-| `llm.model_params` | 按模型名追加的参数（如 `o3-mini: {reasoning_effort: medium}`、`deepseek-reasoner: {reasoning_effort: low}`） | `{}` |
+| `llm.model_params` | 按模型名追加的参数（如 `o3-mini: {reasoning_effort: medium}`） | `{}` |
+| `llm.stage1_params` / `llm.stage2_params` | 按阶段追加的参数，优先级高于 `model_params`；两阶段共用同一模型时靠它区分（如 `stage1_params: {reasoning_effort: none}`、`stage2_params: {reasoning_effort: high}`） | `{}` |
 | `llm.retry.{max_attempts,base_delay_s,max_delay_s,jitter_s}` | 指数退避重试（REQ-1.7） | `5 / 2.0 / 60.0 / 0.5` |
-| `llm.budget.max_usd` + `prices_per_1m_tokens` | 成本预算与价格表（`null` 关闭预算）；价格是 2025 快照，**用前核对**（DEV-05） | `5.0` |
+| `llm.budget.max_usd` + `prices_per_1m_tokens` | 成本预算与价格表（`null` 关闭预算）；价格是 2025/2026 快照，**用前核对**（DEV-05） | `5.0` |
+| `llm.budget.estimated_output_tokens` | 预算守卫估算单次输出长度（留空=按 `max_output_tokens`） | `null` |
 | `llm.cache.{enabled,path}` | 响应缓存 / 断点续跑（REQ-1.17） | `true` / `artifacts/cache.sqlite3` |
 | `prompts.{stage1,stage2,version,format}` | 模板路径、版本号、输出格式（`json`/`text`）（DOM-1.2，改动必须 bump） | `prompts/*.md` / `v1-reconstructed-2026-11` / `json` |
 | `output.dir` 等 | 产物目录与文件名 | `artifacts/` |
 
 相对路径一律以**配置文件所在目录的上一级**（即仓库根）为基准解析。
-推理模型（`o1`/`o3`/`o4` 前缀，或 `model_params` 里带 `reasoning_effort` 的模型，如 `deepseek-reasoner`）
-不发 `temperature`、改用 `max_completion_tokens`；若只返回 `reasoning_content` 也会取回内容，
-两者都空则按可重试失败处理。
+
+两类"推理"参数要分开看：
+
+- **OpenAI o\* 系列**（`o1`/`o3`/`o4` 前缀）不接受 `temperature`，输出上限用
+  `max_completion_tokens`；客户端会自动切换，并按 `reasoning_effort` 传 `medium`。
+- **DeepSeek 2026-11 API**（`deepseek-flash` / `deepseek-v4-pro`）用
+  `thinking: {type: enabled|disabled}`（经 `extra_body`）或 `reasoning_effort`
+  （`none` 关闭思考）开关思考，**仍用 `max_tokens`**，且思考模式下 `temperature` 失效
+  （客户端因此不发 `temperature`）。Stage-1 关思考、Stage-2 开思考就靠
+  `llm.stage1_params` / `llm.stage2_params` 表达。
+
+两种情况下只要返回体只有 `reasoning_content`，客户端也会取回内容；两者都空则按可重试失败处理。
 
 ## 5. 使用方式
 
@@ -162,9 +173,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe run.py annotate -c config/config.gold150.yaml --no-cache --write-report
 
 # 4) 真实调用（DeepSeek / Qwen，论文原版 prompt；先 --dry-run 看成本）
+#    key 只放在环境变量里：setx DEEPSEEK_API_KEY "sk-..."（重开终端后生效）
 $env:DEEPSEEK_API_KEY = "sk-..."
-.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --dry-run
-.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --dry-run    # 估成本
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache   # 3 条试跑
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report         # 150 条正式跑
 
 $env:DASHSCOPE_API_KEY = "sk-..."
 .\.venv\Scripts\python.exe run.py annotate -c config/config.qwen.yaml --limit 10 --write-report
@@ -212,20 +225,23 @@ $env:DASHSCOPE_API_KEY = "sk-..."
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-241 个用例，覆盖：schema/标签归一、配置合并与校验（含 provider 表、key 变量、`prompts.format`）、
-三种数据格式与 column_map、Zenodo gold 构建器（URL 解析、标签码映射、脏值归一、provenance）、
-prompt 渲染与截断（含附录原文内联方式与 `describe_code_change` 四分支）、JSON 解析与附录文本解析、
-价格/重试/缓存、OpenAI 兼容客户端（请求参数、推理模型、`reasoning_content` 回退、参数修复、密钥脱敏）、
-流水线（缓存命中、预算停止、重试恢复、解析修复、text 格式端到端、单条失败隔离、审计日志无密钥）、
-CLI 退出码与产物（含 `--repeat` 稳定性）、指标计算（含分来源与一致性）。
+247 个用例，覆盖：schema/标签归一、配置合并与校验（含 provider 表、key 变量、`prompts.format`、
+`stage1_params`/`stage2_params`）、三种数据格式与 column_map、Zenodo gold 构建器（URL 解析、标签码映射、
+脏值归一、provenance）、prompt 渲染与截断（含附录原文内联方式与 `describe_code_change` 四分支）、
+JSON 解析与附录文本解析、价格/重试/缓存（缓存键含阶段参数）、OpenAI 兼容客户端（请求参数、o\* 与
+DeepSeek 思考模式的参数差异、`reasoning_content` 回退、参数修复、密钥脱敏）、
+流水线（缓存命中、预算停止、重试恢复、解析修复、text 格式端到端、阶段参数按阶段下发、单条失败隔离、
+审计日志无密钥）、CLI 退出码与产物（含 `--repeat` 稳定性）、指标计算（含分来源与一致性）。
 
 ## 8. 已知限制与下一步
 
 1. **原文 prompt 已到位，仅 `describe_code_change` 与 system message 为重建**：Stage-2 的
    "Subsequent Code Changes:" 段落按附录语义复刻，措辞未公开（DEV-01）。下一步：拿到函数原文后替换并 bump 版本。
-2. **真实模型跑批尚未执行**：本机没有 OpenAI key，DeepSeek/Qwen 配置已就绪（`config.deepseek.yaml` /
-   `config.qwen.yaml`）。下一步：设 `DEEPSEEK_API_KEY` → `--dry-run` → `--limit 10` → 150 条 →
-   对齐 Table VII（DEV-09 说明为何不能直接比较 86.1%/74.6%）。
+2. **真实模型跑批尚未执行**：本机没有 OpenAI key，DeepSeek/Qwen 配置已就绪
+   （`config.deepseek.yaml` 已按 DeepSeek 2026-11 的 `deepseek-flash` / `deepseek-v4-pro` 改写，
+   Stage-1 关思考、Stage-2 开思考；`config.qwen.yaml` 的 `qwen-plus`/`qwen-max` 未核验）。下一步：
+   设 `DEEPSEEK_API_KEY` → `--limit 3 --dry-run` → `--limit 3` → 150 条 → 对齐 Table VII
+   （DEV-09 说明为何不能直接比较 86.1%/74.6%）。
 3. **分来源指标已就绪**：`evaluation.per_source` 给出 file-level / hunk-level / human 的 OA 与 Macro-F1
    （对应论文 83.6/78.1、89.2/83.4、85.6/62.4）；n 很小时只对出现过的类做平均（`observed_labels`）。
    mock 在 150 条真实 gold 上的数值（0.220/0.178）只证明脏值处理，不是实验结果（DEV-03）。

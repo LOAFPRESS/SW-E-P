@@ -120,8 +120,21 @@ class AnnotationPipeline:
         self.prices = PriceTable.from_config(config)
         self.temperature = float(config.get("llm.temperature"))
         self.max_output_tokens = int(config.get("llm.max_output_tokens"))
+        estimated_output = config.get("llm.budget.estimated_output_tokens", None)
+        # The pre-call budget guard estimates the *expected* completion length,
+        # not the cap: a 8k cap on a thinking model would otherwise make the
+        # guard stop the run long before the real spend gets close to the limit.
+        self.estimated_output_tokens = (
+            int(estimated_output) if estimated_output else self.max_output_tokens
+        )
         self.model_stage1 = str(config.get("llm.stage1_model"))
         self.model_stage2 = str(config.get("llm.stage2_model"))
+        # Per-stage request overrides: DeepSeek needs thinking off for Stage-1 and
+        # on for Stage-2, which llm.model_params (keyed by model) cannot express.
+        self.stage_params = {
+            "stage1": dict(config.get("llm.stage1_params", {}) or {}),
+            "stage2": dict(config.get("llm.stage2_params", {}) or {}),
+        }
         self.max_parse_retries = int(config.get("llm.max_parse_retries", 2))
         self.abort_on_record_error = bool(config.get("run.abort_on_record_error", False))
         budget = config.get("llm.budget.max_usd", None)
@@ -249,7 +262,10 @@ class AnnotationPipeline:
         issues: Optional[List[str]] = None,
     ) -> LLMResponse:
         """One logical call: cache lookup, budget guard, retry, audit log."""
-        cache_key = ResponseCache.make_key(model, self.temperature, self.max_output_tokens, messages)
+        params = self._stage_params(stage)
+        cache_key = ResponseCache.make_key(
+            model, self.temperature, self.max_output_tokens, messages, params
+        )
         if self.cache is not None:
             hit = self.cache.get(cache_key)
             if hit is not None:
@@ -286,6 +302,7 @@ class AnnotationPipeline:
                 temperature=self.temperature,
                 max_output_tokens=self.max_output_tokens,
                 context={"stage": stage, "record": record, "issues": issues or []},
+                params=params,
             )
 
         def on_retry(attempt_no, exc, delay):
@@ -383,11 +400,16 @@ class AnnotationPipeline:
         raise ParseError("%s answer unparsable after repair: %s" % (stage, last_error))
 
     # --------------------------------------------------------------- helpers
+    def _stage_params(self, stage: str) -> Dict[str, Any]:
+        """Request overrides for a stage ('stage1', 'stage1-repair', 'stage2', ...)."""
+        key = "stage2" if stage.startswith("stage2") else "stage1"
+        return self.stage_params.get(key, {})
+
     def _estimate_cost(self, messages: List[dict], model: str) -> float:
-        """Upper bound of the next call's cost, used for the budget guard."""
+        """Expected cost of the next call, used for the budget guard."""
         prompt_chars = sum(len(message.get("content", "")) for message in messages)
         prompt_tokens = prompt_chars // 4 + 1
-        return self.prices.cost(model, prompt_tokens, self.max_output_tokens)
+        return self.prices.cost(model, prompt_tokens, self.estimated_output_tokens)
 
     def _account(self, annotation: AnnotationRecord, response: LLMResponse):
         annotation.input_tokens += response.prompt_tokens

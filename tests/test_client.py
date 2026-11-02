@@ -118,6 +118,36 @@ class TestRequestShape:
         assert request["temperature"] == 0.2
         assert request["top_p"] == 0.9
 
+    def test_thinking_mode_drops_temperature_but_keeps_max_tokens(self):
+        """DeepSeek 2026-11: thinking ignores temperature and has no max_completion_tokens."""
+        client = OpenAIClient(
+            api_key="sk-x",
+            model_params={"deepseek-flash": {"extra_body": {"thinking": {"type": "enabled"}}}},
+        )
+        request = client._build_request("deepseek-flash", MESSAGES, 0, 4000)
+        assert "temperature" not in request
+        assert request["max_tokens"] == 4000
+        assert request["extra_body"] == {"thinking": {"type": "enabled"}}
+
+    def test_reasoning_effort_none_keeps_temperature(self):
+        client = OpenAIClient(
+            api_key="sk-x",
+            model_params={"deepseek-flash": {"reasoning_effort": "none"}},
+        )
+        request = client._build_request("deepseek-flash", MESSAGES, 0, 512)
+        assert request["temperature"] == 0.0
+        assert request["max_tokens"] == 512
+        assert request["reasoning_effort"] == "none"
+
+    def test_reasoning_effort_high_disables_temperature(self):
+        client = OpenAIClient(
+            api_key="sk-x",
+            model_params={"deepseek-flash": {"reasoning_effort": "high"}},
+        )
+        request = client._build_request("deepseek-flash", MESSAGES, 0, 4000)
+        assert "temperature" not in request
+        assert request["max_tokens"] == 4000
+
 
 class TestAnswerExtraction:
     def test_content_is_used(self, client):
