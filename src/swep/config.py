@@ -21,6 +21,7 @@ from typing import Any, Dict
 import yaml
 
 from .errors import ConfigError
+from .providers import KEYED_PROVIDERS, PROVIDERS, api_key_env, base_url
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -45,12 +46,13 @@ DEFAULTS: Dict[str, Any] = {
     "llm": {
         "provider": "mock",
         "base_url": None,
-        "api_key_env": "OPENAI_API_KEY",
+        "api_key_env": None,
         "stage1_model": "gpt-4.1",
         "stage2_model": "o3-mini",
         "temperature": 0,
         "max_output_tokens": 1024,
         "timeout_s": 60,
+        "model_params": {},
         "retry": {
             "max_attempts": 5,
             "base_delay_s": 2.0,
@@ -62,6 +64,11 @@ DEFAULTS: Dict[str, Any] = {
             "prices_per_1m_tokens": {
                 "gpt-4.1": {"input": 2.0, "output": 8.0},
                 "o3-mini": {"input": 1.1, "output": 4.4},
+                "o4-mini": {"input": 1.1, "output": 4.4},
+                "deepseek-chat": {"input": 0.28, "output": 0.42},
+                "deepseek-reasoner": {"input": 0.55, "output": 2.19},
+                "qwen-plus": {"input": 0.11, "output": 0.28},
+                "qwen-max": {"input": 0.34, "output": 1.37},
             },
             "default_price": {"input": 2.0, "output": 8.0},
         },
@@ -72,6 +79,7 @@ DEFAULTS: Dict[str, Any] = {
         "stage1": "prompts/stage1.md",
         "stage2": "prompts/stage2.md",
         "version": "v1-reconstructed-2026-11",
+        "format": "json",
     },
     "output": {
         "dir": "artifacts",
@@ -171,16 +179,37 @@ class Config:
         """Return the API key from the environment.
 
         The key is never written to disk, logs or exception messages; when it is
-        missing the error names the expected variable (SEC-1.1).
+        missing the error names the expected variable (SEC-1.1).  Which variable
+        to read comes from ``llm.api_key_env`` when set, otherwise from the
+        provider table, so switching providers does not require editing a key
+        name by hand.
         """
-        env_name = self.get("llm.api_key_env", "OPENAI_API_KEY")
+        provider = str(self.get("llm.provider")).strip().lower()
+        if provider == "mock":
+            # The offline provider never reads a key; returning "" keeps the
+            # "no secret exists" property visible to callers.
+            return ""
+        env_name = self.get("llm.api_key_env", None) or api_key_env(provider)
+        if not env_name:
+            raise ConfigError(
+                "provider %r has no API key variable; pick one of %s"
+                % (provider, ", ".join(KEYED_PROVIDERS))
+            )
         value = os.environ.get(env_name, "").strip()
         if not value:
             raise ConfigError(
-                "LLM provider 'openai' requires the environment variable %s to be "
-                "set; alternatively set llm.provider: mock to run offline" % env_name
+                "LLM provider '%s' requires the environment variable %s to be "
+                "set; alternatively set llm.provider: mock to run offline"
+                % (provider, env_name)
             )
         return value
+
+    def effective_base_url(self) -> str:
+        """``llm.base_url`` if configured, else the provider default."""
+        configured = self.get("llm.base_url", None)
+        if configured:
+            return str(configured)
+        return base_url(self.get("llm.provider"))
 
     # ------------------------------------------------------------ validation
     def _validate(self):
@@ -190,7 +219,7 @@ class Config:
             ("run.seed", (int,), "an integer"),
             ("data.path", (type(None), str), "a path string (or null when --dataset is used)"),
             ("data.format", (str,), "one of auto/jsonl/json/csv"),
-            ("llm.provider", (str,), "one of mock/openai"),
+            ("llm.provider", (str,), "one of %s" % ", ".join(PROVIDERS)),
             ("llm.stage1_model", (str,), "a model name"),
             ("llm.stage2_model", (str,), "a model name"),
             ("llm.temperature", (int, float), "a number"),
@@ -212,11 +241,13 @@ class Config:
                     "configuration key %s must be %s, got %r" % (dotted, expected, value)
                 )
 
-        if self.get("llm.provider") not in ("mock", "openai"):
+        if self.get("llm.provider") not in PROVIDERS:
             raise ConfigError(
-                "llm.provider must be 'mock' or 'openai', got %r"
-                % (self.get("llm.provider"),)
+                "llm.provider must be one of %s, got %r"
+                % (", ".join(PROVIDERS), self.get("llm.provider"))
             )
+        if not isinstance(self.get("llm.model_params", {}), dict):
+            raise ConfigError("llm.model_params must be a mapping of model -> request parameters")
         if self.get("data.format") not in ("auto", "jsonl", "json", "csv"):
             raise ConfigError(
                 "data.format must be one of auto/jsonl/json/csv, got %r"
@@ -239,6 +270,13 @@ class Config:
             self.raw["data"]["column_map"] = {}
         if not isinstance(self.get("data.column_map"), dict):
             raise ConfigError("data.column_map must be a mapping of target -> source column")
+
+        if self.get("prompts.format", "json") not in ("json", "text"):
+            raise ConfigError(
+                "prompts.format must be 'json' (house templates) or 'text' (the "
+                "appendix templates written for a plain-text answer), got %r"
+                % (self.get("prompts.format"),)
+            )
 
         for key in ("prompts.stage1", "prompts.stage2"):
             prompt_path = self.resolve(self.get(key))

@@ -172,3 +172,60 @@ class TestValidation:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-do-not-print")
         config = make_config({"llm": {"provider": "openai"}})
         assert "sk-do-not-print" not in config.describe()
+
+
+class TestProviders:
+    def test_deepseek_defaults(self, make_config, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+        config = make_config({"llm": {"provider": "deepseek"}})
+        assert config.effective_base_url() == "https://api.deepseek.com"
+        assert config.api_key() == "sk-deepseek"
+
+    def test_qwen_defaults(self, make_config, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dashscope")
+        config = make_config({"llm": {"provider": "qwen"}})
+        assert config.effective_base_url().startswith("https://dashscope.aliyuncs.com")
+        assert config.api_key() == "sk-dashscope"
+
+    def test_explicit_base_url_wins(self, make_config, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-x")
+        config = make_config(
+            {"llm": {"provider": "deepseek", "base_url": "https://proxy.internal/v1"}}
+        )
+        assert config.effective_base_url() == "https://proxy.internal/v1"
+
+    def test_missing_key_names_the_provider_variable(self, make_config, monkeypatch):
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        config = make_config({"llm": {"provider": "deepseek"}})
+        with pytest.raises(ConfigError) as excinfo:
+            config.api_key()
+        assert "DEEPSEEK_API_KEY" in str(excinfo.value)
+        assert "deepseek" in str(excinfo.value)
+
+    def test_mock_needs_no_key(self, make_config):
+        assert make_config({"llm": {"provider": "mock"}}).api_key() == ""
+
+    def test_unknown_provider_lists_the_supported_ones(self, make_config):
+        with pytest.raises(ConfigError) as excinfo:
+            make_config({"llm": {"provider": "anthropic"}})
+        message = str(excinfo.value)
+        assert "deepseek" in message
+        assert "qwen" in message
+
+
+class TestPromptFormat:
+    def test_text_format_is_accepted(self, make_config):
+        assert make_config({"prompts": {"format": "text"}}).get("prompts.format") == "text"
+
+    def test_unknown_format_is_rejected(self, make_config):
+        with pytest.raises(ConfigError) as excinfo:
+            make_config({"prompts": {"format": "yaml"}})
+        assert "prompts.format" in str(excinfo.value)
+
+    def test_default_format_is_json(self, make_config):
+        assert make_config().get("prompts.format") == "json"
+
+    def test_model_params_must_be_a_mapping(self, make_config):
+        with pytest.raises(ConfigError) as excinfo:
+            make_config({"llm": {"model_params": ["not", "a", "map"]}})
+        assert "model_params" in str(excinfo.value)

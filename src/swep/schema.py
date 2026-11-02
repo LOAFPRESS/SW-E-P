@@ -136,6 +136,8 @@ class ReviewRecord:
     comment_text: str
     review_diff: str = ""
     subsequent_changes: str = ""
+    reviewed_path: Optional[str] = None
+    new_path: Optional[str] = None
     action_id: Optional[str] = None
     action_name: Optional[str] = None
     trigger: Optional[str] = None

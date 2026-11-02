@@ -126,6 +126,7 @@ def _cmd_validate_data(config: Config, args) -> int:
     for source, count in stats["by_source"].items():
         print("  %-12s %d" % (source, count))
     print("with review diff: %d" % stats["with_review_diff"])
+    print("with reviewed path: %d" % stats.get("with_reviewed_path", 0))
     print("with subsequent changes: %d" % stats["with_subsequent_changes"])
     print("with gold label: %d" % stats["with_gold_label"])
     print("synthetic rows: %d" % stats["synthetic"])
@@ -146,6 +147,7 @@ def _cmd_annotate(config: Config, args) -> int:
         config.resolve(config.get("prompts.stage1")),
         config.resolve(config.get("prompts.stage2")),
         config.get("prompts.version"),
+        output_format=config.get("prompts.format", "json"),
     )
     logger.info("prompts: %s", prompts.describe())
 

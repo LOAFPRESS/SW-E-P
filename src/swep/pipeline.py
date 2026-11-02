@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional
 from .errors import BudgetExceeded, LLMCallError, ParseError, SwepError
 from .llm import PriceTable, ResponseCache, RetryPolicy, call_with_retry
 from .llm.base import LLMClient, LLMResponse
-from .llm.parsing import parse_stage1, parse_stage2
+from .llm.parsing import stage1_parser, stage2_parser
 from .logging_utils import JsonlWriter, get_logger
 from .prompts import PromptSet
 from .schema import (
@@ -329,8 +329,34 @@ class AnnotationPipeline:
         annotation: AnnotationRecord,
         issues: Optional[List[str]] = None,
     ):
-        """Parse an answer, asking the model to repair malformed JSON if needed."""
-        parser = parse_stage1 if stage == "stage1" else parse_stage2
+        """Parse an answer, asking the model to repair a malformed one if needed.
+
+        The parser follows the configured answer format: the appendix templates
+        ask for a plain-text ``Classification:`` line, the house templates ask for
+        JSON.  The repair instruction must use the same format, otherwise the
+        model answers in the wrong shape and the retry is wasted.
+        """
+        if stage.startswith("stage1"):
+            parser = stage1_parser(self.prompts.output_format)
+        else:
+            parser = stage2_parser(self.prompts.output_format)
+        if self.prompts.output_format == "json":
+            repair_template = (
+                "That answer could not be parsed: {error}. Reply again with a "
+                "single JSON object that follows the required schema and "
+                "contains no other text."
+            )
+        else:
+            repair_template = (
+                "That answer could not be parsed: {error}. Reply again and follow the "
+                "output format exactly: list the items under the expected headings "
+                "and end with a single 'Classification:' line containing one of the "
+                "allowed classifications and nothing else."
+            )
+
+        def repair_text(error: str) -> str:
+            return repair_template.format(error=error)
+
         current = response
         last_error: Optional[ParseError] = None
         for attempt_index in range(self.max_parse_retries + 1):
@@ -349,14 +375,7 @@ class AnnotationPipeline:
                 )
                 repair_messages = list(messages) + [
                     {"role": "assistant", "content": current.text[:2000]},
-                    {
-                        "role": "user",
-                        "content": (
-                            "That answer could not be parsed: %s. Reply again with a "
-                            "single JSON object that follows the required schema and "
-                            "contains no other text." % exc
-                        ),
-                    },
+                    {"role": "user", "content": repair_text(str(exc))},
                 ]
                 model = self.model_stage1 if stage == "stage1" else self.model_stage2
                 current = self._call(repair_messages, model, stage + "-repair", record, issues=issues)
@@ -443,6 +462,7 @@ def run_fingerprint(config, prompts: PromptSet) -> str:
             str(config.get("llm.stage1_model")),
             str(config.get("llm.stage2_model")),
             str(config.get("llm.temperature")),
+            str(getattr(prompts, "output_format", "json")),
             prompts.fingerprint,
         ]
     )

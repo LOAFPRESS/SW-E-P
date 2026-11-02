@@ -1,0 +1,36 @@
+{
+  "zenodo_root": "C:\\Users\\刘思懿\\Documents\\软件工程\\P1\\AIReviewActionAnalysis(Zenodo)",
+  "files": {
+    "sampled_file_level_review.csv": "9c2e7f91ce4ee456bb1733dd59ca34b126d5fd2f7f593422a88dbcc20e259bb3",
+    "(resolved)sampled_file_level_review.csv": "7f38acf44a7a9992ffb75ccd9dc192cf38f92eda06beca55751c98c084bcf65c",
+    "sampled_patch_level_review.csv": "8262b359ddfd1fe1902f264fcba89672568e19184c7af0442b2120c3d120cd09",
+    "(resolved)sampled_patch_level_review.csv": "11734774acd6af8c7ac366b4de232358ab63c87e348fb62b75e563320acbfbec",
+    "sampled_human_review.csv": "7382a89c02d3ffd0181dcc2a5cc9d6ed3caffed59310af39d43bee2d172938da",
+    "(resolved)sampled_human_review.csv": "99c315a7e490b359588b0774a7e16c8a8f4dbe48dd92c57ce6b9cea24bb182d1"
+  },
+  "per_source": {
+    "file-level": 50,
+    "hunk-level": 50,
+    "human": 50
+  },
+  "unlabeled": {},
+  "label_codes": {
+    "1": 19,
+    "2,0": 43,
+    "0": 11,
+    "2,1": 13,
+    "2,2": 58,
+    "2,-1": 6
+  },
+  "deleted_file_rows": 6,
+  "count": 150,
+  "duplicate_comment_ids": 0,
+  "labels": {
+    "General": 19,
+    "None": 11,
+    "Valid-Fully": 58,
+    "Valid-Partially": 13,
+    "Valid-Unaddressed": 43,
+    "Valid-Uncertain": 6
+  }
+}

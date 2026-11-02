@@ -1,10 +1,14 @@
 """Tests for prompt rendering and version fingerprinting (DOM-1.2)."""
 
+import json
+
 import pytest
 
 from swep.errors import ConfigError
 from swep.prompts import PromptSet, load_template
-from swep.prompts.builder import MAX_DIFF_CHARS
+from swep.prompts.builder import MAX_DIFF_CHARS, describe_code_change
+
+from conftest import PROMPTS_DIR, make_record
 
 
 class TestRendering:
@@ -88,3 +92,77 @@ class TestFingerprint:
     def test_missing_template_file(self, tmp_path):
         with pytest.raises(ConfigError):
             load_template("missing", tmp_path / "nope.md")
+
+
+class TestAppendixPrompts:
+    """The verbatim appendix templates ask for text, not JSON."""
+
+    def _paper_set(self, output_format="text"):
+        return PromptSet.load(
+            PROMPTS_DIR / "stage1_v2_original.md",
+            PROMPTS_DIR / "stage2_v2_original.md",
+            "v2-paper-2026-11",
+            output_format=output_format,
+        )
+
+    def test_values_are_inlined_as_json_literals(self):
+        prompts = self._paper_set()
+        record = make_record(comment_text='Use "quotes" and\nnewlines carefully.')
+        content = prompts.stage1_messages(record)[1]["content"]
+        assert json.dumps(record.comment_text, ensure_ascii=False) in content
+        assert "$review_comment" not in content
+
+    def test_stage1_asks_for_the_appendix_output(self):
+        prompts = self._paper_set()
+        content = prompts.stage1_messages(make_record())[1]["content"]
+        assert "List the identified issues or suggestions" in content
+
+    def test_stage2_renders_the_issue_checklist(self):
+        prompts = self._paper_set()
+        record = make_record()
+        content = prompts.stage2_messages(record, ["validate the extension", "handle empty files"])[1]["content"]
+        assert "validate the extension" in content
+        assert "handle empty files" in content
+
+    def test_stage2_renders_the_subsequent_changes_paragraph(self):
+        prompts = self._paper_set()
+        content = prompts.stage2_messages(make_record(), ["one"])[1]["content"]
+        assert "Subsequent Code Changes: The cumulative code changes are:" in content
+        assert "@@ -1,3 +1,5 @@" in content
+
+    def test_text_format_uses_the_text_system_prompt(self):
+        assert self._paper_set("text").system_prompt != self._paper_set("json").system_prompt
+
+    def test_unknown_format_is_rejected(self):
+        with pytest.raises(ConfigError) as excinfo:
+            self._paper_set("xml")
+        assert "prompts.format" in str(excinfo.value)
+
+    def test_fingerprint_includes_the_format_independent_templates(self):
+        assert self._paper_set().fingerprint.startswith("v2-paper-2026-11:")
+
+
+class TestDescribeCodeChange:
+    def test_no_change(self):
+        record = make_record(subsequent_changes="")
+        assert "No change happened" in describe_code_change(record)
+
+    def test_deleted_file(self):
+        record = make_record(subsequent_changes="File_Deleted")
+        assert "was deleted after the review" in describe_code_change(record)
+
+    def test_renamed_file(self):
+        record = make_record(
+            reviewed_path="pkg/old.py",
+            new_path="pkg/new.py",
+            subsequent_changes="@@ -1 +1 @@\n-a\n+b\n",
+        )
+        text = describe_code_change(record)
+        assert "renamed to pkg/new.py" in text
+        assert "+b" in text
+
+    def test_normal_change(self):
+        record = make_record(reviewed_path="pkg/mod.py", new_path="pkg/mod.py")
+        text = describe_code_change(record)
+        assert "renamed" not in text
+        assert "+    return None" in text

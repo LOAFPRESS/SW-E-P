@@ -41,6 +41,8 @@ FIELD_ALIASES: Dict[str, List[str]] = {
         "subsequent_diff",
         "addressed_diff",
     ],
+    "reviewed_path": ["reviewed_path", "diff_path", "path", "reviewed_file", "file_path"],
+    "new_path": ["new_path", "file_name", "new_file_path", "renamed_path"],
     "action_id": ["action_id", "actionid", "workflow_id", "action"],
     "action_name": ["action_name", "action_type", "workflow_name"],
     "trigger": ["trigger", "trigger_type", "event"],
@@ -53,7 +55,19 @@ FIELD_ALIASES: Dict[str, List[str]] = {
 }
 
 #: Fields copied verbatim (everything else is coerced to text).
-_SCALAR_FIELDS = ("comment_id", "source", "action_id", "action_name", "trigger", "granularity", "repo", "pr_number", "gold_label")
+_SCALAR_FIELDS = (
+    "comment_id",
+    "source",
+    "action_id",
+    "action_name",
+    "trigger",
+    "granularity",
+    "repo",
+    "pr_number",
+    "reviewed_path",
+    "new_path",
+    "gold_label",
+)
 _TEXT_FIELDS = ("comment_text", "review_diff", "subsequent_changes")
 
 
@@ -178,6 +192,8 @@ def _to_record(mapped: Dict[str, Any], index: int) -> ReviewRecord:
         comment_text=values["comment_text"],
         review_diff=values["review_diff"],
         subsequent_changes=values["subsequent_changes"],
+        reviewed_path=values.get("reviewed_path"),
+        new_path=values.get("new_path"),
         action_id=values.get("action_id"),
         action_name=values.get("action_name"),
         trigger=values.get("trigger"),
@@ -293,6 +309,7 @@ def describe_dataset(records: List[ReviewRecord]) -> Dict[str, Any]:
         "count": len(records),
         "by_source": dict(sorted(by_source.items())),
         "with_review_diff": sum(1 for record in records if record.review_diff.strip()),
+        "with_reviewed_path": sum(1 for record in records if (record.reviewed_path or "").strip()),
         "with_subsequent_changes": sum(1 for record in records if record.subsequent_changes.strip()),
         "with_gold_label": sum(1 for record in records if record.gold_label),
         "synthetic": sum(1 for record in records if record.synthetic),

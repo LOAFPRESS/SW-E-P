@@ -4,9 +4,50 @@
 > 版本号会写进 `annotations.csv` 的 `prompt_version` 列，`summary.json` 的 `run_fingerprint`
 > 还包含两个模板的 sha256 前缀，因此"哪一版 prompt 产出了哪批标签"是可追溯的。
 
-## v1-reconstructed-2026-11（2026-11-02，刘思懿）
+## v2-paper-2026-11（2026-11-02，刘思懿）· 论文附录原文
 
-**背景**：论文的原始 prompt 发布在 Zenodo 在线附录，当前环境无法访问（见 `docs/paper-deviations.md` DEV-01），
+**背景**：用户把 Zenodo 附录包下载到本机，原版 prompt 已从附录代码中取出并**逐字**落盘：
+
+| 模板 | 来源文件 | 来源常量 |
+| --- | --- | --- |
+| `prompts/stage1_v2_original.md` | `llm_analysis/extract_suggestion_prompter_3.py` | `task_description_for_indentify_suggestion_12` |
+| `prompts/stage2_v2_original.md` | `llm_analysis/analyze_addressed_prompter_4.py` | `task_description_for_analyze_addressed_7` |
+
+**与 v1 的差别**
+
+- 输出格式：原版是**纯文本**，不是 JSON —— `prompts.format: text`；`swep.llm.parsing` 用
+  `parse_stage1_text` / `parse_stage2_text` 按附录 `extract_suggestion.py` /
+  `analyze_addressed_status.py` 的规则解析（定位 `Classification:`，取其后最早出现的分类短语）。
+- 输入内联：原版把三个字段用 `json.dumps(value, ensure_ascii=False)` 转义后填进 `Code Review:`；
+  `builder._json_literal()` 复刻这一行为（换行/引号不会破坏结构）。
+- 占位符：`$reviewed_path` `$reviewed_change` `$review_comment` / `$review_comment_items`
+  `$subsequent_changes_block`。
+- Stage-2 的 `Subsequent Code Changes:` 段由 `builder.describe_code_change()` 生成（无改动 / 文件被删除
+  `File_Deleted` / 重命名 / 普通累积 diff 四种语义）；附录未公开该函数逐字措辞，属重建（DEV-01）。
+- 系统提示词同样非原文（附录只有 user 侧模板），当前为一句话角色设定。
+
+**使用方式**
+
+```powershell
+$env:DEEPSEEK_API_KEY = "sk-..."
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --dry-run
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report
+```
+
+`config/config.qwen.yaml` 是同一套模板换 DashScope 端点；`config/config.gold150.yaml` 用 v1 模板 + mock
+在真实 150 条 gold 上做离线冒烟。
+
+**已知差异 / 待办**
+
+1. `describe_code_change` 的措辞为重建（见 DEV-01 的"残余重建"段）；拿到原文后替换并 bump 版本。
+2. system message 非原文。
+3. 截断上限（`MAX_*_CHARS`）为本项目自定，论文未说明；沿用 v1 的 4000/12000/12000。
+
+---
+
+## v1-reconstructed-2026-11（2026-11-02，刘思懿）· 历史版本
+
+**背景**：当时以为 Zenodo 不可达（见 `docs/paper-deviations.md` DEV-01 历史），
 按论文 §IV-B 的标注准则重建了 Stage-1 / Stage-2 两份模板。
 
 **Stage-1（`prompts/stage1.md`）**

@@ -17,9 +17,10 @@ from swep.llm.mock import MockLLMClient
 from swep.logging_utils import JsonlWriter, setup_logger
 from swep.metrics import observed_labels, per_source_report
 from swep.pipeline import AnnotationPipeline, run_fingerprint
+from swep.prompts import PromptSet
 from swep.schema import CSV_COLUMNS
 
-from conftest import make_record, write_config
+from conftest import PROMPTS_DIR, make_record, write_config
 
 VALID_STAGE1 = '{"label": "Valid", "issues": ["validate the extension"], "rationale": "Specific request."}'
 VALID_STAGE2 = (
@@ -293,3 +294,80 @@ class TestStability:
         assert stability["unstable"][0]["comment_id"] == "a"
         assert stability["per_repeat_distribution"][0]["Valid-Fully"] == 1
         assert stability["per_repeat_distribution"][1]["General"] == 1
+
+
+PAPER_STAGE1 = """Issues or Suggestions:
+- The `parse_config` function should validate the file extension.
+
+Classification: Contain Valid Issues Or Suggestions
+"""
+
+PAPER_STAGE2_PARTLY = """Analysis details:
+- Addressed Items:
+- The extension is validated.
+- Unaddressed Items:
+- Empty files are still accepted.
+
+Classification: Partly Addressed
+"""
+
+
+class TestTextFormat:
+    """The appendix prompts answer with text, so the pipeline must parse text."""
+
+    def _setup(self, tmp_path, records_path):
+        config = write_config(
+            tmp_path,
+            records_path,
+            prompts={
+                "format": "text",
+                "stage1": str(PROMPTS_DIR / "stage1_v2_original.md"),
+                "stage2": str(PROMPTS_DIR / "stage2_v2_original.md"),
+            },
+        )
+        prompts = PromptSet.load(
+            PROMPTS_DIR / "stage1_v2_original.md",
+            PROMPTS_DIR / "stage2_v2_original.md",
+            "v2-paper-2026-11",
+            output_format="text",
+        )
+        return config, prompts
+
+    def test_text_answers_drive_the_same_labels(self, tmp_path, records_path):
+        config, prompts = self._setup(tmp_path, records_path)
+        client = StubClient([PAPER_STAGE1, PAPER_STAGE2_PARTLY])
+        result = make_pipeline(config, client, prompts).run([make_record("a")])
+
+        assert result.stats.completed == 1
+        assert result.stats.parse_retries == 0
+        assert result.annotations[0].stage1_label == "Valid"
+        assert result.annotations[0].final_label == "Valid-Partially"
+        assert result.annotations[0].is_addressed is True
+        assert result.prompt_fingerprint.startswith("v2-paper-2026-11:")
+
+    def test_prompt_fingerprint_records_the_output_format(self, tmp_path, records_path):
+        json_config = write_config(tmp_path, records_path)
+        text_config, text_prompts = self._setup(tmp_path, records_path)
+        json_prompts = PromptSet.load(
+            PROMPTS_DIR / "stage1_v2_original.md",
+            PROMPTS_DIR / "stage2_v2_original.md",
+            "v2-paper-2026-11",
+            output_format="json",
+        )
+        assert run_fingerprint(text_config, text_prompts) != run_fingerprint(
+            text_config, json_prompts
+        )
+        assert json_config.get("prompts.format") == "json"
+
+    def test_repair_instruction_matches_the_text_format(self, tmp_path, records_path):
+        config, prompts = self._setup(tmp_path, records_path)
+        client = StubClient(["I think the comment is fine.", PAPER_STAGE1, PAPER_STAGE2_PARTLY])
+        result = make_pipeline(config, client, prompts).run([make_record("a")])
+
+        assert result.stats.parse_retries == 1
+        repair_call = client.calls[1]
+        assert repair_call["stage"] == "stage1-repair"
+        repair_message = repair_call["messages"][-1]["content"]
+        assert "Classification:" in repair_message
+        assert "single JSON object" not in repair_message
+        assert result.stats.completed == 1

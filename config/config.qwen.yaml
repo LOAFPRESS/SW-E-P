@@ -1,0 +1,62 @@
+# Paper-faithful prompts (verbatim Zenodo appendix) + Alibaba Qwen.
+#
+# Why Qwen: DashScope exposes an OpenAI-compatible endpoint, so the same client
+# works; qwen-plus is cheap enough to annotate all 150 gold comments for well
+# under a dollar, which makes the pipeline testable end-to-end without any
+# Western service.  Qwen is *not* one of the models the paper evaluated, so a run
+# with this file is a deviation (DEV-09 in docs/paper-deviations.md), useful for
+# a sensitivity check rather than for Table VII alignment.
+#
+# Setup:
+#   set DASHSCOPE_API_KEY=sk-...         (never put the key in this file)
+#   python run.py annotate -c config/config.qwen.yaml --dry-run
+#
+# Prices below are a 2025 snapshot used only by the cost guard; verify them
+# against https://help.aliyun.com/zh/model-studio/models before trusting the
+# reported dollar amount (DEV-05).
+
+run:
+  name: gold150-qwen-paper
+  limit: null
+  seed: 42
+  abort_on_record_error: false
+  log_level: INFO
+
+data:
+  path: data/gold150.jsonl
+  format: auto
+
+llm:
+  provider: qwen                # base_url + key variable come from swep.providers
+  stage1_model: qwen-plus
+  stage2_model: qwen-max
+  temperature: 0
+  max_output_tokens: 1500
+  timeout_s: 600
+  max_parse_retries: 2
+  retry:
+    max_attempts: 5
+    base_delay_s: 2.0
+    max_delay_s: 60.0
+    jitter_s: 0.5
+  budget:
+    max_usd: 3.0
+    prices_per_1m_tokens:
+      qwen-plus: {input: 0.11, output: 0.28}
+      qwen-max: {input: 0.34, output: 1.37}
+    default_price: {input: 0.34, output: 1.37}
+  cache:
+    enabled: true
+    path: artifacts/qwen-paper/cache.sqlite3
+
+prompts:
+  stage1: prompts/stage1_v2_original.md
+  stage2: prompts/stage2_v2_original.md
+  version: v2-paper-2026-11
+  format: text                  # the appendix answers with Classification: lines
+
+output:
+  dir: artifacts/qwen-paper
+  annotations_csv: annotations.csv
+  requests_jsonl: requests.jsonl
+  summary_json: summary.json

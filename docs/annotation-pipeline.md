@@ -24,11 +24,13 @@
 
 | 论文设置 | 本模块实现 |
 |----------|-----------|
-| Stage-1 模型 GPT-4.1、Stage-2 模型 o3-mini，`temperature=0` | `config/config.yaml` 中 `llm.stage1_model` / `llm.stage2_model` / `llm.temperature`，全部可配置（REQ-1.2） |
+| Stage-1 模型 GPT-4.1、Stage-2 模型 o3-mini，`temperature=0` | `llm.stage1_model` / `llm.stage2_model` / `llm.temperature`，全部可配置（REQ-1.2）；`openai` / `deepseek` / `qwen` 三个 provider 走同一套代码（DEV-09） |
+| prompt 原文在 Zenodo 在线附录 | 已逐字落盘：`prompts/stage1_v2_original.md`、`prompts/stage2_v2_original.md`，`prompts.format: text`，版本 `v2-paper-2026-11`（DEV-01）；`prompts/stage1.md`/`stage2.md` 是早期的 JSON 重建版，只用于 mock 离线演示 |
 | 六类评价：`None`、`General`、`Valid-Uncertain`、`Valid-Unaddressed`、`Valid-Partially`、`Valid-Fully` | `swep.schema.SIX_CLASS_LABELS`；`final_label_for()` 负责两阶段合并 |
 | 二分类：`Valid-Partially` + `Valid-Fully` = Addressed | `swep.schema.ADDRESSED_LABELS`、`AnnotationRecord.is_addressed` |
 | Stage-1 OA 94.5% / F1 90.8%；Stage-2 OA 91.8% / F1 88.5%；六类平均 OA 86.1% / F1 74.6%（Table VII） | `python run.py annotate --write-report` 会在 `summary.json` 的 `evaluation` 与 `run_report.md` 中给出同样的 OA/Macro-F1，便于逐项对照 |
-| 150 条 gold（file-level 50 / hunk-level 50 / human 50） | 通过 `data.split` 过滤源；`describe_dataset()` 输出各源计数，防止混入错误子集 |
+| 150 条 gold（file-level 50 / hunk-level 50 / human 50） | `scripts/build_gold_dataset.py` 内连接 Zenodo 的 `llm_analysis/input/sampled_*_review.csv` 与 `labeled/(resolved)sampled_*_review.csv`，产出 `data/gold150.jsonl` + `.provenance.json`（SHA-256、标签码统计，DEV-02/DEV-07）；`data.split` 可只跑单一来源 |
+| 输出为 `Classification:` 纯文本（附录解析脚本如此假设） | `swep.llm.parsing.parse_stage1_text` / `parse_stage2_text` 复刻附录 `extract_suggestion.py` / `analyze_addressed_status.py` 的规则；同时保留 JSON 解析器 |
 
 ## 3. 架构
 
@@ -36,14 +38,16 @@
 run.py                     唯一入口（REQ-1.13）
  └─ swep.cli               参数解析、退出码、产物落盘
      ├─ swep.config        YAML 加载 / 深合并默认值 / ${VAR} 展开 / 结构校验（REQ-1.2）
+     ├─ swep.providers     provider 表：openai / deepseek / qwen 的 base_url 与 key 变量
      ├─ swep.data.loader   多格式读取 + column_map 列名适配 + 字段校验（REQ-1.1/1.8）
+     ├─ swep.data.zenodo   Zenodo 附录 → 150 条 gold + provenance（scripts/build_gold_dataset.py）
      ├─ swep.prompts       prompt 模板渲染、上下文截断、版本指纹（DOM-1.2）
      ├─ swep.pipeline      两阶段编排、缓存、预算、重试、审计日志（REQ-1.7/1.16/1.17）
      │   ├─ swep.llm.mock    离线确定性假模型（无 key 也能跑通端到端）
-     │   ├─ swep.llm.client  OpenAI 兼容客户端（真实调用，推理模型参数差异已处理）
-     │   ├─ swep.llm.parsing 严格 JSON 解析 + 修复重问 + 标签归一
+     │   ├─ swep.llm.client  OpenAI 兼容客户端（openai/deepseek/qwen；推理模型参数差异已处理）
+     │   ├─ swep.llm.parsing JSON 解析 + 附录文本格式解析 + 修复重问 + 标签归一
      │   └─ swep.llm.cache   sqlite 响应缓存（断点续跑）
-     ├─ swep.metrics       标签分布、OA、Macro-F1、混淆矩阵（不依赖 sklearn）
+     ├─ swep.metrics       标签分布、OA、Macro-F1、混淆矩阵、分来源指标（不依赖 sklearn）
      └─ swep.export        annotations.csv / summary.json / run_report.md
 ```
 
@@ -73,36 +77,72 @@ load_dataset → ReviewRecord.validate()
 
 ### 3.2 解析与修复
 
-模型偶尔会加 ```json 围栏、写解释性前缀，或漏掉 `issues`。`swep.llm.parsing` 的处理顺序：
+模型偶尔会加 Markdown 围栏、写解释性前缀，或漏掉条目。解析器由 `prompts.format` 决定：
+
+**JSON 格式**（`prompts/stage1.md`、`stage2.md`，早期重建版）：
 
 1. 去掉 Markdown 代码围栏，用括号配平扫描出第一个完整的 JSON 对象（字符串内的括号/转义安全）；
 2. `label` 走 `Stage1Label.coerce` / `Stage2Label.coerce` 归一（大小写、`Valid_Fully`、`not addressed` 等别名）；
 3. 结构不一致的兜底：`Valid` 却没有 issue → 若 rationale 足够具体则提升为单条 issue，否则降级 `General`；
-   非 `Valid` 却带 issue → 清空并告警；
-4. 仍然失败 → 追加 assistant 回复 + 一条修复指令重问（`llm.max_parse_retries`，默认 2 次），
-   审计日志里记为 `stage1-repair` / `stage2-repair`。
+   非 `Valid` 却带 issue → 清空并告警。
+
+**文本格式**（`prompts/*_v2_original.md`，论文附录原文）：
+
+1. 先尝试 JSON 解析兜底（部分模型会主动输出 JSON）；
+2. Stage-1：定位 `Classification:`，在其后按附录口径匹配 `not contain any issues or suggestions` /
+   `only contain general ...` / `contain valid ...`（含附录的短路语 `Not contain any items.`、
+   `Not contain specific items.`），取**最早出现**的短语，避免 "not fully addressed" 这类复合句误判；
+   问题清单取 `Issues or Suggestions:` 到 `Classification:` 之间的列表；
+3. Stage-2：`Classification:` 之后按 `not enough information` < `not addressed` <
+   `partly/partially addressed` < `fully addressed` 的最早出现位置定档；`addressed items:` /
+   `unaddressed items:` 分节取条目（注意 `unaddressed items:` 内部含 `addressed items:`，切片做了前缀排除）；
+   附录的 "No change happened; the comment remains unaddressed." 这类短路句直接判 `Valid-Unaddressed`；
+4. 两种格式都失败 → 追加 assistant 回复 + 格式对应的修复指令重问（`llm.max_parse_retries`，默认 2 次），
+   审计日志里记为 `stage1-repair` / `stage2-repair`；修复指令本身随 `prompts.format` 切换措辞。
 
 ## 4. 配置
 
-所有可调参数在 `config/config.yaml`，代码中没有硬编码的模型名/路径/价格（REQ-1.2）。
-`config/config.openai.yaml` 是真实调用的小批量版本（`limit: 5`、独立输出目录）。
+所有可调参数在 `config/*.yaml`，代码中没有硬编码的模型名/路径/价格（REQ-1.2）。
+
+仓库自带 5 份配置，直接换 `-c` 即可：
+
+| 配置 | provider | 用途 |
+|------|----------|------|
+| `config/config.yaml` | `mock` | 默认演示：12 条合成样例 + JSON 重建版 prompt，离线可跑 |
+| `config/config.gold150.yaml` | `mock` | **真实 150 条 gold** 的离线冒烟（`data/gold150.jsonl`），只验证管线能吞下真实数据 |
+| `config/config.deepseek.yaml` | `deepseek` | 真实标注：`deepseek-chat` + `deepseek-reasoner`，论文原版 prompt（`format: text`） |
+| `config/config.qwen.yaml` | `qwen` | 同上，换 DashScope：`qwen-plus` + `qwen-max` |
+| `config/config.openai.yaml` | `openai` | 拿到 OpenAI key 时的对照实验（`limit: 5`） |
+
+`swep.providers` 里的 provider 表（key 变量名固定，**key 只从环境变量读**，SEC-1.1/1.2）：
+
+| provider | base_url | 环境变量 |
+|----------|----------|----------|
+| `mock` | — | —（不需要） |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `deepseek` | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+| `qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` |
 
 | 键 | 含义 | 默认 |
 |----|------|------|
 | `run.name` / `run.limit` / `run.seed` | 运行名、样本上限（REQ-1.16）、随机种子 | `gold150-mock` / `null` / `42` |
 | `run.abort_on_record_error` | 单条失败是否中断整批 | `false` |
 | `data.path` / `format` / `column_map` / `split` | 数据路径、格式（auto/jsonl/json/csv）、列名映射、子集过滤 | 合成样例 / `auto` / `{}` / `null` |
-| `llm.provider` | `mock`（离线）或 `openai` | `mock` |
-| `llm.base_url` / `api_key_env` | OpenAI 兼容网关；**key 只从环境变量读**（SEC-1.1/1.2） | `null` / `OPENAI_API_KEY` |
+| `llm.provider` | `mock` / `openai` / `deepseek` / `qwen` | `mock` |
+| `llm.base_url` / `api_key_env` | 覆盖 provider 的端点与 key 变量；留空则用 provider 默认 | `null` / `null` |
 | `llm.stage1_model` / `stage2_model` / `temperature` | 两个阶段的模型与采样温度 | `gpt-4.1` / `o3-mini` / `0` |
 | `llm.max_output_tokens` / `timeout_s` / `max_parse_retries` | 输出上限、超时、解析修复次数 | `1024` / `60` / `2` |
+| `llm.model_params` | 按模型名追加的参数（如 `o3-mini: {reasoning_effort: medium}`、`deepseek-reasoner: {reasoning_effort: low}`） | `{}` |
 | `llm.retry.{max_attempts,base_delay_s,max_delay_s,jitter_s}` | 指数退避重试（REQ-1.7） | `5 / 2.0 / 60.0 / 0.5` |
-| `llm.budget.max_usd` + `prices_per_1m_tokens` | 成本预算与价格表（`null` 关闭预算） | `5.0` |
+| `llm.budget.max_usd` + `prices_per_1m_tokens` | 成本预算与价格表（`null` 关闭预算）；价格是 2025 快照，**用前核对**（DEV-05） | `5.0` |
 | `llm.cache.{enabled,path}` | 响应缓存 / 断点续跑（REQ-1.17） | `true` / `artifacts/cache.sqlite3` |
-| `prompts.{stage1,stage2,version}` | 模板路径与版本号（DOM-1.2，改动必须 bump） | `prompts/*.md` / `v1-reconstructed-2026-11` |
+| `prompts.{stage1,stage2,version,format}` | 模板路径、版本号、输出格式（`json`/`text`）（DOM-1.2，改动必须 bump） | `prompts/*.md` / `v1-reconstructed-2026-11` / `json` |
 | `output.dir` 等 | 产物目录与文件名 | `artifacts/` |
 
 相对路径一律以**配置文件所在目录的上一级**（即仓库根）为基准解析。
+推理模型（`o1`/`o3`/`o4` 前缀，或 `model_params` 里带 `reasoning_effort` 的模型，如 `deepseek-reasoner`）
+不发 `temperature`、改用 `max_completion_tokens`；若只返回 `reasoning_content` 也会取回内容，
+两者都空则按可重试失败处理。
 
 ## 5. 使用方式
 
@@ -111,21 +151,29 @@ load_dataset → ReviewRecord.validate()
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
 
-# 1) 只校验数据、不调用 LLM
-.\.venv\Scripts\python.exe run.py validate-data -c config/config.yaml
+# 1) 从本机 Zenodo 附录包重建 150 条 gold（已生成过可跳过）
+.\.venv\Scripts\python.exe scripts\build_gold_dataset.py
 
-# 2) 离线端到端（mock provider，无需 API key）
+# 2) 只校验数据、不调用 LLM
+.\.venv\Scripts\python.exe run.py validate-data -c config/config.gold150.yaml
+
+# 3) 离线端到端（mock provider，无需 API key）
 .\.venv\Scripts\python.exe run.py annotate -c config/config.yaml --write-report
+.\.venv\Scripts\python.exe run.py annotate -c config/config.gold150.yaml --no-cache --write-report
 
-# 3) 小批量真实调用（需要 OPENAI_API_KEY，先设 5 条上限）
-$env:OPENAI_API_KEY = "sk-..."
-.\.venv\Scripts\python.exe run.py annotate -c config/config.openai.yaml --write-report
+# 4) 真实调用（DeepSeek / Qwen，论文原版 prompt；先 --dry-run 看成本）
+$env:DEEPSEEK_API_KEY = "sk-..."
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --dry-run
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report
 
-# 4) 换数据集 / 只跑 human 子集 / 忽略缓存
-.\.venv\Scripts\python.exe run.py annotate -c config/config.yaml --dataset data/raw/gold150.csv --no-cache
+$env:DASHSCOPE_API_KEY = "sk-..."
+.\.venv\Scripts\python.exe run.py annotate -c config/config.qwen.yaml --limit 10 --write-report
 
-# 5) 稳定性实验：整批重复 5 次（对应论文 temperature=0 跑 5 次的协议，DEV-04）
-.\.venv\Scripts\python.exe run.py annotate -c config/config.openai.yaml --repeat 5 --write-report
+# 5) 换数据集 / 只跑 human 子集 / 忽略缓存
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --dataset data/raw/gold150.csv --no-cache
+
+# 6) 稳定性实验：整批重复 5 次（对应论文 temperature=0 跑 5 次的协议，DEV-04）
+.\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --repeat 5 --write-report
 ```
 
 `python run.py -c config/config.yaml` 省略子命令时默认执行 `annotate`。
@@ -164,19 +212,25 @@ $env:OPENAI_API_KEY = "sk-..."
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-161 个用例，覆盖：schema/标签归一、配置合并与校验、三种数据格式与 column_map、prompt 渲染与截断、
-JSON 解析与修复、价格/重试/缓存、流水线（缓存命中、预算停止、重试恢复、解析修复、单条失败隔离、
-审计日志无密钥）、CLI 退出码与产物（含 `--repeat` 稳定性）、指标计算（含分来源与一致性）。
+241 个用例，覆盖：schema/标签归一、配置合并与校验（含 provider 表、key 变量、`prompts.format`）、
+三种数据格式与 column_map、Zenodo gold 构建器（URL 解析、标签码映射、脏值归一、provenance）、
+prompt 渲染与截断（含附录原文内联方式与 `describe_code_change` 四分支）、JSON 解析与附录文本解析、
+价格/重试/缓存、OpenAI 兼容客户端（请求参数、推理模型、`reasoning_content` 回退、参数修复、密钥脱敏）、
+流水线（缓存命中、预算停止、重试恢复、解析修复、text 格式端到端、单条失败隔离、审计日志无密钥）、
+CLI 退出码与产物（含 `--repeat` 稳定性）、指标计算（含分来源与一致性）。
 
 ## 8. 已知限制与下一步
 
-1. **prompt 为按论文准则重建**（原 prompt 在 Zenodo 在线附录中，当前网络无法访问），
-   偏差登记见 `docs/paper-deviations.md` 的 DEV-01。拿到原 prompt 后应做 A/B 对比并 bump 版本号。
-2. **尚无真实 API 跑通 150 条 gold 的准确率**：目前只有离线 mock 验证（DEV-02/DEV-03）。
-   下一步：配置 key → `config/config.openai.yaml` 跑 5 条 → 逐步放大到 150 条 → 对齐 Table VII。
-3. **分来源指标已实现但仅在小样例上验证**：`evaluation.per_source` 给出 file-level / hunk-level / human
-   的 OA 与 Macro-F1（对应论文 83.6/78.1、89.2/83.4、85.6/62.4）；n 很小时只对出现过的类做平均
-   （`observed_labels`），不能直接和论文数字对比（DEV-06）。
+1. **原文 prompt 已到位，仅 `describe_code_change` 与 system message 为重建**：Stage-2 的
+   "Subsequent Code Changes:" 段落按附录语义复刻，措辞未公开（DEV-01）。下一步：拿到函数原文后替换并 bump 版本。
+2. **真实模型跑批尚未执行**：本机没有 OpenAI key，DeepSeek/Qwen 配置已就绪（`config.deepseek.yaml` /
+   `config.qwen.yaml`）。下一步：设 `DEEPSEEK_API_KEY` → `--dry-run` → `--limit 10` → 150 条 →
+   对齐 Table VII（DEV-09 说明为何不能直接比较 86.1%/74.6%）。
+3. **分来源指标已就绪**：`evaluation.per_source` 给出 file-level / hunk-level / human 的 OA 与 Macro-F1
+   （对应论文 83.6/78.1、89.2/83.4、85.6/62.4）；n 很小时只对出现过的类做平均（`observed_labels`）。
+   mock 在 150 条真实 gold 上的数值（0.220/0.178）只证明脏值处理，不是实验结果（DEV-03）。
 4. **5 次重复实验的工程支持已就绪**：`--repeat 5` 输出一致性（`stability.agreement_rate`）与逐次分布，
-   但真实 API 的 5 次跑批尚未执行（DEV-04）。
-5. 与组长的数据接口约定见 `docs/annotation-csv-schema.md`；若 Zenodo 列名不同，只改 `data.column_map`。
+   真实 API 的 5 次跑批尚未执行（DEV-04）。
+5. **gold 二分类占比与论文 RQ3 描述不一致**（我们 47.3% vs 论文 25.1%），需与组长对齐口径（DEV-10）；
+   标注六分类不受影响。
+6. 与组长的数据接口约定见 `docs/annotation-csv-schema.md`；若换数据源，只改 `data.column_map`。

@@ -1,0 +1,47 @@
+# Gold-150 dataset + deterministic mock provider.
+#
+# This is the configuration to use before any API key exists: it runs the real
+# pipeline (prompts, two stages, cache, budget, audit log) over the real gold
+# data, but the answers come from the deterministic heuristic in swep.llm.mock.
+# The resulting accuracy is therefore *not* a result: it only proves that the
+# plumbing works on 150 real comments (DEV-03 in docs/paper-deviations.md).
+#
+#   python run.py annotate -c config/config.gold150.yaml --write-report
+#
+# Build the dataset first:
+#   python scripts/build_gold_dataset.py --zenodo-root "<...>/AIReviewActionAnalysis(Zenodo)"
+
+run:
+  name: gold150-mock
+  limit: null
+  seed: 42
+  abort_on_record_error: false
+  log_level: INFO
+
+data:
+  path: data/gold150.jsonl
+  format: auto
+
+llm:
+  provider: mock
+  stage1_model: gpt-4.1
+  stage2_model: o3-mini
+  temperature: 0
+  max_output_tokens: 1024
+  budget:
+    max_usd: 5.0
+  cache:
+    enabled: true
+    path: artifacts/gold150-mock/cache.sqlite3
+
+prompts:
+  stage1: prompts/stage1.md
+  stage2: prompts/stage2.md
+  version: v1-reconstructed-2026-11
+  format: json
+
+output:
+  dir: artifacts/gold150-mock
+  annotations_csv: annotations.csv
+  requests_jsonl: requests.jsonl
+  summary_json: summary.json

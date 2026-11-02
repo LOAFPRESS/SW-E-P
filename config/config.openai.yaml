@@ -1,26 +1,28 @@
 # ===========================================================================
-# 真实调用（OpenAI 或任意 OpenAI 兼容网关）的配置示例
+# OpenAI 对照实验（论文原始模型：gpt-4.1 + o3-mini，原版 prompt）
 #
 # 使用方式：
-#   setx OPENAI_API_KEY "sk-..."        （PowerShell: $env:OPENAI_API_KEY="sk-..."）
+#   $env:OPENAI_API_KEY="sk-..."
 #   python run.py validate-data -c config/config.openai.yaml
-#   python run.py annotate -c config/config.openai.yaml --limit 5 --dry-run
+#   python run.py annotate -c config/config.openai.yaml --dry-run
 #   python run.py annotate -c config/config.openai.yaml --limit 5 --write-report
 #
 # 注意：
 #   * 千万不要把 key 写进这个文件或任何提交物（SEC-1.1）。
 #   * 先用 --limit 5 --dry-run 看预估费用，再小批量试跑，最后跑全量。
+#   * 与 config.deepseek.yaml / config.qwen.yaml 使用同一套原版 prompt 与同一份 gold，
+#     因此结果可与 DeepSeek/Qwen 直接对比（DEV-09）。
 # ===========================================================================
 
 run:
   name: "gold150-openai"
-  limit: 5
+  limit: 5                       # 先 5 条；确认无误后改成 null 跑全量
   seed: 42
   abort_on_record_error: false
   log_level: INFO
 
 data:
-  path: "data/samples/sample_comments.jsonl"
+  path: "data/gold150.jsonl"
   format: auto
   column_map: {}
   split: null
@@ -32,9 +34,11 @@ llm:
   stage1_model: gpt-4.1
   stage2_model: o3-mini
   temperature: 0
-  max_output_tokens: 1024
-  timeout_s: 60
+  max_output_tokens: 1500
+  timeout_s: 600
   max_parse_retries: 2
+  model_params:                  # 推理模型不发 temperature，改用 reasoning effort
+    o3-mini: {reasoning_effort: "medium"}
   retry:
     max_attempts: 5
     base_delay_s: 2.0
@@ -42,18 +46,19 @@ llm:
     jitter_s: 0.5
   budget:
     max_usd: 5.0
-    prices_per_1m_tokens:
+    prices_per_1m_tokens:        # 2025 快照，用前核对官方价目表（DEV-05）
       gpt-4.1: {input: 2.0, output: 8.0}
       o3-mini: {input: 1.1, output: 4.4}
     default_price: {input: 2.0, output: 8.0}
   cache:
     enabled: true
-    path: "artifacts/cache.sqlite3"
+    path: "artifacts/cache.openai.sqlite3"
 
 prompts:
-  stage1: "prompts/stage1.md"
-  stage2: "prompts/stage2.md"
-  version: "v1-reconstructed-2026-11"
+  stage1: "prompts/stage1_v2_original.md"
+  stage2: "prompts/stage2_v2_original.md"
+  version: "v2-paper-2026-11"
+  format: text
 
 output:
   dir: "artifacts/openai"

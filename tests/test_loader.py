@@ -7,6 +7,8 @@ import pytest
 from swep.data import describe_dataset, load_dataset
 from swep.errors import DataValidationError
 
+from conftest import write_jsonl
+
 
 class TestFormats:
     def test_jsonl(self, records_path):
@@ -138,3 +140,44 @@ class TestDescribe:
         assert stats["by_source"] == {"file-level": 2, "hunk-level": 1}
         assert stats["with_gold_label"] == 3
         assert stats["synthetic"] == 0
+
+
+class TestZenodoColumns:
+    """The appendix column names must map onto the record without a column_map."""
+
+    def test_reviewed_path_aliases(self, tmp_path):
+        path = write_jsonl(
+            tmp_path / "rows.jsonl",
+            [
+                {
+                    "comment_id": "z-1",
+                    "source": "file-level",
+                    "comment_text": "Please fix the extension check.",
+                    "Diff_path": "pkg/mod.py",
+                    "New_path": "pkg/renamed.py",
+                }
+            ],
+        )
+        records = load_dataset(path)
+        assert records[0].reviewed_path == "pkg/mod.py"
+        assert records[0].new_path == "pkg/renamed.py"
+
+    def test_reviewed_path_is_counted_by_describe(self, tmp_path):
+        path = write_jsonl(
+            tmp_path / "rows.jsonl",
+            [
+                {
+                    "comment_id": "z-1",
+                    "source": "hunk-level",
+                    "comment_text": "Rename it.",
+                    "reviewed_path": "pkg/mod.py",
+                },
+                {
+                    "comment_id": "z-2",
+                    "source": "human",
+                    "comment_text": "Rename it.",
+                },
+            ],
+        )
+        stats = describe_dataset(load_dataset(path))
+        assert stats["with_reviewed_path"] == 1
