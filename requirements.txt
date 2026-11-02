@@ -1,0 +1,16 @@
+# Runtime dependencies of the two-stage annotation module (Python 3.8+).
+#
+# Only these two packages are needed for `python run.py annotate`:
+#   * PyYAML is imported when the configuration file is read;
+#   * openai is imported lazily, and only when llm.provider == "openai".
+#     With the default `provider: mock` the pipeline runs offline, so a fresh
+#     clone works before any package is installed except PyYAML.
+#
+# openai is pinned to 1.55.3 because newer releases require jiter>=0.10, which
+# publishes no wheel for Python 3.8 (this is the version constraint of the
+# project environment, see URS NFR "Python 3.8+").
+openai==1.55.3
+PyYAML>=5.4,<7
+
+# Development / CI
+pytest>=7,<9

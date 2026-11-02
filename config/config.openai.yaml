@@ -1,0 +1,62 @@
+# ===========================================================================
+# 真实调用（OpenAI 或任意 OpenAI 兼容网关）的配置示例
+#
+# 使用方式：
+#   setx OPENAI_API_KEY "sk-..."        （PowerShell: $env:OPENAI_API_KEY="sk-..."）
+#   python run.py validate-data -c config/config.openai.yaml
+#   python run.py annotate -c config/config.openai.yaml --limit 5 --dry-run
+#   python run.py annotate -c config/config.openai.yaml --limit 5 --write-report
+#
+# 注意：
+#   * 千万不要把 key 写进这个文件或任何提交物（SEC-1.1）。
+#   * 先用 --limit 5 --dry-run 看预估费用，再小批量试跑，最后跑全量。
+# ===========================================================================
+
+run:
+  name: "gold150-openai"
+  limit: 5
+  seed: 42
+  abort_on_record_error: false
+  log_level: INFO
+
+data:
+  path: "data/samples/sample_comments.jsonl"
+  format: auto
+  column_map: {}
+  split: null
+
+llm:
+  provider: openai
+  base_url: null                 # 用第三方网关时改成正向代理地址
+  api_key_env: OPENAI_API_KEY
+  stage1_model: gpt-4.1
+  stage2_model: o3-mini
+  temperature: 0
+  max_output_tokens: 1024
+  timeout_s: 60
+  max_parse_retries: 2
+  retry:
+    max_attempts: 5
+    base_delay_s: 2.0
+    max_delay_s: 60.0
+    jitter_s: 0.5
+  budget:
+    max_usd: 5.0
+    prices_per_1m_tokens:
+      gpt-4.1: {input: 2.0, output: 8.0}
+      o3-mini: {input: 1.1, output: 4.4}
+    default_price: {input: 2.0, output: 8.0}
+  cache:
+    enabled: true
+    path: "artifacts/cache.sqlite3"
+
+prompts:
+  stage1: "prompts/stage1.md"
+  stage2: "prompts/stage2.md"
+  version: "v1-reconstructed-2026-11"
+
+output:
+  dir: "artifacts/openai"
+  annotations_csv: "annotations.csv"
+  requests_jsonl: "requests.jsonl"
+  summary_json: "summary.json"

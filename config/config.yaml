@@ -1,0 +1,76 @@
+# ===========================================================================
+# SW-E-P 两阶段 LLM 标注流水线 —— 运行配置
+# 负责人：刘思懿（1240021954）
+#
+# 所有可调参数都放在这里，代码中不出现任何硬编码的模型名/路径/价格（REQ-1.2）。
+# 相对路径以"仓库根目录"为准：本文件位于 config/ 之下，因此 config/ 的上一级
+# 就是仓库根目录。
+#
+# 首次运行建议：保持 provider: mock，可在没有任何 API key 和数据的情况下
+# 把整条流水线（含缓存、重试、CSV 导出、核对指标）跑通。
+# ===========================================================================
+
+run:
+  name: "gold150-mock"      # 运行名，写进 summary.json，便于区分批次
+  limit: null               # 只跑前 N 条（null = 全部），用于小批量试跑（REQ-1.16）
+  seed: 42                  # 随机种子；temperature=0 之外的兜底可复现性
+  abort_on_record_error: false  # 单条失败是否中断整批（REQ-1.15 建议 false）
+  log_level: INFO
+
+data:
+  # 数据文件：jsonl / json / csv 均可。当前为内置合成样例；
+  # 拿到 Zenodo 公开数据集后，把 path 指过去即可（见 data/README.md）。
+  path: "data/samples/sample_comments.jsonl"
+  format: auto              # auto 按扩展名推断，也可显式写 jsonl/json/csv
+
+  # 列名适配层：把数据集里的真实列名映射到内部字段名。
+  # 例：
+  #   column_map:
+  #     comment_id: "review_comment_id"
+  #     comment_text: "comment_body"
+  #     review_diff: "code_diff"
+  column_map: {}
+
+  split: null               # 过滤子集，如 "human" 或 {field: source, values: [human]}
+  require_nonempty: ["comment_text"]
+
+llm:
+  provider: mock            # mock = 离线确定性假模型；openai = 真实调用
+  base_url: null            # 兼容任意 OpenAI 协议网关（如自建代理）时填写
+  api_key_env: OPENAI_API_KEY  # 只从环境变量读 key，绝不写进配置文件（SEC-1.1）
+  stage1_model: gpt-4.1     # 论文 Stage-1 用 GPT-4.1
+  stage2_model: o3-mini     # 论文 Stage-2 用 o3-mini
+  temperature: 0            # 论文两阶段均为 temperature=0
+  max_output_tokens: 1024
+  timeout_s: 60
+  max_parse_retries: 2      # 输出无法解析时，附带修复指令重问的次数
+
+  retry:                    # 指数退避（REQ-1.7）
+    max_attempts: 5
+    base_delay_s: 2.0
+    max_delay_s: 60.0
+    jitter_s: 0.5
+
+  budget:                   # 成本闸门（REQ-1.16，可设为 null 关闭）
+    max_usd: 5.0
+    # 价格快照（美元 / 每百万 token），仅用于估算；请按官方价目表更新。
+    prices_per_1m_tokens:
+      gpt-4.1: {input: 2.0, output: 8.0}
+      o3-mini: {input: 1.1, output: 4.4}
+    default_price: {input: 2.0, output: 8.0}
+
+  cache:                    # 响应缓存与断点续跑（REQ-1.17）
+    enabled: true
+    path: "artifacts/cache.sqlite3"
+
+prompts:
+  stage1: "prompts/stage1.md"
+  stage2: "prompts/stage2.md"
+  # 版本号：每次改动 prompt 都要改这里并同步 prompts/CHANGELOG.md（DOM-1.2）
+  version: "v1-reconstructed-2026-11"
+
+output:
+  dir: "artifacts"
+  annotations_csv: "annotations.csv"
+  requests_jsonl: "requests.jsonl"   # 每次调用的 token/费用审计日志
+  summary_json: "summary.json"
