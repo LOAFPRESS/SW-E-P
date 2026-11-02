@@ -100,3 +100,45 @@ def binary_report(y_true: Sequence[str], y_pred: Sequence[str]) -> Dict[str, obj
     pred = [to_binary(label) for label in y_pred]
     labels = ["Addressed", "Not-Addressed"]
     return classification_report(truth, pred, labels)
+
+
+def observed_labels(y_true: Sequence[str], y_pred: Sequence[str]) -> List[str]:
+    """Labels that occur in the data, in the canonical six-class order.
+
+    Used for small per-source subsets where most of the six classes have no
+    support at all: averaging F1 over unsupported classes would report a
+    misleadingly low score (see DEV-06 in docs/paper-deviations.md).
+    """
+    seen = set(y_true) | set(y_pred)
+    ordered = [label for label in SIX_CLASS_LABELS if label in seen]
+    leftovers = sorted(seen - set(SIX_CLASS_LABELS))
+    return ordered + leftovers
+
+
+def per_source_report(
+    pairs_by_source: Dict[str, Sequence[tuple]],
+) -> Dict[str, Dict[str, object]]:
+    """Six-class and binary metrics for each source group (file/hunk/human).
+
+    ``pairs_by_source`` maps a source name to ``(gold, predicted)`` pairs. The
+    paper breaks Table VII down per source (file 83.6/78.1, hunk 89.2/83.4,
+    human 85.6/62.4), so a single pooled number can hide a weak stratum.
+    """
+    report: Dict[str, Dict[str, object]] = {}
+    for source in sorted(pairs_by_source):
+        pairs = [(truth, pred) for truth, pred in pairs_by_source[source] if truth and pred]
+        if not pairs:
+            continue
+        y_true = [truth for truth, _ in pairs]
+        y_pred = [pred for _, pred in pairs]
+        labels = observed_labels(y_true, y_pred)
+        six_class = classification_report(y_true, y_pred, labels)
+        report[source] = {
+            "n": len(pairs),
+            "labels_observed": labels,
+            "accuracy": six_class["accuracy"],
+            "macro_f1": six_class["macro_f1"],
+            "binary": binary_report(y_true, y_pred),
+            "per_class": six_class["per_class"],
+        }
+    return report

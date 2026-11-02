@@ -59,6 +59,20 @@ class TestAnnotate:
         assert "test-v1" in summary["prompts"]
         assert summary["pipeline"]["completed"] == 3
 
+    def test_repeat_runs_report_stability(self, config_path, tmp_path, capsys):
+        import json
+
+        code = cli.main(["annotate", "-c", str(config_path), "--quiet", "--repeat", "2"])
+        assert code == cli.EXIT_OK
+        summary = json.loads((tmp_path / "out" / "summary.json").read_text(encoding="utf-8"))
+        stability = summary["stability"]
+        assert stability["repeats"] == 2
+        assert stability["comparable_records"] == 3
+        # The mock provider is deterministic, so every record must agree.
+        assert stability["agreement_rate"] == 1.0
+        assert len(stability["per_repeat_distribution"]) == 2
+        assert "stability" in capsys.readouterr().out
+
 
 class TestErrors:
     def test_missing_configuration_returns_config_error(self, tmp_path):

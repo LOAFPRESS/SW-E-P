@@ -5,11 +5,17 @@ import json
 import pytest
 
 from swep.errors import BudgetExceeded, ParseError
-from swep.export import evaluate_against_gold, summarize_run, write_annotations_csv
+from swep.export import (
+    compute_stability,
+    evaluate_against_gold,
+    summarize_run,
+    write_annotations_csv,
+)
 from swep.llm import ResponseCache
 from swep.llm.base import LLMClient, LLMResponse
 from swep.llm.mock import MockLLMClient
 from swep.logging_utils import JsonlWriter, setup_logger
+from swep.metrics import observed_labels, per_source_report
 from swep.pipeline import AnnotationPipeline, run_fingerprint
 from swep.schema import CSV_COLUMNS
 
@@ -220,3 +226,70 @@ class TestExport:
         assert summary["labels"]["final_six_class"]["None"] == 1
         assert summary["pipeline"]["completed"] == 2
         assert summary["run_fingerprint"]
+
+
+class TestPerSource:
+    def test_groups_metrics_by_source(self):
+        report = per_source_report(
+            {
+                "file-level": [("Valid-Fully", "Valid-Fully"), ("None", "None")],
+                "hunk-level": [("General", "Valid-Fully")],
+            }
+        )
+        assert set(report) == {"file-level", "hunk-level"}
+        assert report["file-level"]["n"] == 2
+        assert report["file-level"]["accuracy"] == 1.0
+        assert report["hunk-level"]["accuracy"] == 0.0
+        assert report["hunk-level"]["binary"]["accuracy"] == 0.0
+
+    def test_skips_empty_groups_and_unlabelled_pairs(self):
+        report = per_source_report({"human": [], "file-level": [("", "")]})
+        assert report == {}
+
+    def test_observed_labels_follow_canonical_order(self):
+        labels = observed_labels(["Valid-Fully", "General"], ["None", "General"])
+        assert labels == ["None", "General", "Valid-Fully"]
+
+    def test_evaluation_carries_per_source_breakdown(self, tmp_path, records_path, prompts):
+        config = write_config(tmp_path, records_path)
+        result = make_pipeline(config, MockLLMClient(), prompts).run(
+            [make_record("a"), make_record("b", comment_text="LGTM")]
+        )
+        predicted = {item.comment_id: item.final_label for item in result.annotations}
+        sources = {"a": "file-level", "b": "hunk-level"}
+        evaluation = evaluate_against_gold(result.annotations, predicted, sources=sources)
+        assert evaluation["per_source"]["file-level"]["n"] == 1
+        assert evaluation["per_source"]["hunk-level"]["n"] == 1
+        # Without the source map there is no per-source section at all.
+        assert "per_source" not in evaluate_against_gold(result.annotations, predicted)
+
+
+class TestStability:
+    def test_identical_runs_agree(self, tmp_path, records_path, prompts):
+        config = write_config(tmp_path, records_path)
+        records = [make_record("a")]
+        runs = [make_pipeline(config, MockLLMClient(), prompts).run(records) for _ in range(2)]
+        stability = compute_stability(runs)
+        assert stability["repeats"] == 2
+        assert stability["comparable_records"] == 1
+        assert stability["agreement_rate"] == 1.0
+        assert stability["unstable"] == []
+
+    def test_disagreeing_runs_are_listed(self, tmp_path, records_path, prompts):
+        config = write_config(tmp_path, records_path)
+        records = [make_record("a")]
+        first = make_pipeline(config, StubClient([VALID_STAGE1, VALID_STAGE2]), prompts).run(records)
+        second = make_pipeline(
+            config,
+            StubClient(
+                [
+                    '{"label": "General", "issues": [], "rationale": "vague"}',
+                ]
+            ),
+            prompts,
+        ).run(records)
+        stability = compute_stability([first, second])
+        assert stability["agreement_rate"] == 0.0
+        assert stability["unstable"][0]["comment_id"] == "a"
+        assert stability["per_repeat_distribution"][0]["Valid-Fully"] == 1
+        assert stability["per_repeat_distribution"][1]["General"] == 1

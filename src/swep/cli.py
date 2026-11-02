@@ -26,6 +26,7 @@ from .config import Config
 from .data import describe_dataset, load_dataset
 from .errors import BudgetExceeded, ConfigError, DataValidationError, LLMCallError, SwepError
 from .export import (
+    compute_stability,
     evaluate_against_gold,
     summarize_run,
     write_annotations_csv,
@@ -76,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
     annotate = sub.add_parser("annotate", parents=[common], help="run the two-stage annotation")
     annotate.add_argument("--write-report", action="store_true", help="also write a markdown run report")
     annotate.add_argument("--dry-run", action="store_true", help="validate inputs and estimate cost only")
+    annotate.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="run the whole batch N times and report label stability (the paper uses 5)",
+    )
 
     sub.add_parser("validate-data", parents=[common], help="load and describe the dataset, no LLM calls")
     return parser
@@ -167,24 +174,42 @@ def _cmd_annotate(config: Config, args) -> int:
         return EXIT_OK
 
     client = build_llm_client(config)
-    cache = ResponseCache(
-        config.resolve(config.get("llm.cache.path")),
-        enabled=bool(config.get("llm.cache.enabled")) and not args.no_cache,
-    )
+    repeat = max(1, int(getattr(args, "repeat", 1) or 1))
+    cache_enabled = bool(config.get("llm.cache.enabled")) and not args.no_cache
+    if repeat > 1:
+        # Repeated sampling must not be served from the cache: every repeat
+        # would otherwise return the first answer and agreement would be 1.0
+        # by construction (DEV-04 in docs/paper-deviations.md).
+        cache_enabled = False
+    cache = ResponseCache(config.resolve(config.get("llm.cache.path")), enabled=cache_enabled)
     request_log = JsonlWriter(output_dir / config.get("output.requests_jsonl"))
-    pipeline = AnnotationPipeline(
-        config,
-        client,
-        prompts,
-        cache=cache,
-        request_log=request_log,
-        logger=logger,
-        progress=not args.quiet,
-    )
+    budget_usd = float(config.get("llm.budget.max_usd", 0.0) or 0.0)
+    results = []
 
     started = time.perf_counter()
     try:
-        result = pipeline.run(records)
+        for attempt in range(repeat):
+            if repeat > 1:
+                logger.info("repeat %d/%d", attempt + 1, repeat)
+            pipeline = AnnotationPipeline(
+                config,
+                client,
+                prompts,
+                cache=cache,
+                request_log=request_log,
+                logger=logger,
+                progress=not args.quiet and repeat == 1,
+            )
+            results.append(pipeline.run(records))
+            spent = sum(float(item.stats.cost_usd) for item in results)
+            if budget_usd and spent > budget_usd:
+                logger.warning(
+                    "cumulative cost $%.4f exceeds the budget $%.4f; stopping after %d repeat(s)",
+                    spent,
+                    budget_usd,
+                    len(results),
+                )
+                break
     except BudgetExceeded as exc:
         logger.error("budget exceeded: %s", exc)
         return EXIT_BUDGET
@@ -196,6 +221,8 @@ def _cmd_annotate(config: Config, args) -> int:
         cache.close()
         client.close()
 
+    result = results[0]
+
     csv_path = write_annotations_csv(
         result.annotations, output_dir / config.get("output.annotations_csv")
     )
@@ -206,15 +233,22 @@ def _cmd_annotate(config: Config, args) -> int:
         for record in records
         if record.gold_label
     }
-    evaluation = evaluate_against_gold(result.annotations, gold)
+    sources = {record.comment_id: record.source for record in records if record.source}
+    evaluation = evaluate_against_gold(result.annotations, gold, sources=sources)
     fingerprint = run_fingerprint(config, prompts)
+    extra = {
+        "evaluation": evaluation,
+        "artifacts": {"annotations_csv": str(csv_path)},
+    }
+    if repeat > 1:
+        extra["stability"] = compute_stability(results)
     summary = summarize_run(
         result,
         dataset_stats,
         config,
         prompts,
         fingerprint,
-        extra={"evaluation": evaluation, "artifacts": {"annotations_csv": str(csv_path)}},
+        extra=extra,
     )
     summary["elapsed_wall_s"] = round(time.perf_counter() - started, 2)
     summary_path = write_json(summary, output_dir / config.get("output.summary_json"))
@@ -250,6 +284,18 @@ def _print_summary(summary, result) -> None:
             evaluation["n"],
             evaluation["six_class"]["accuracy"],
             evaluation["six_class"]["macro_f1"],
+        ))
+        for source, values in (evaluation.get("per_source") or {}).items():
+            print("  %-12s n=%d accuracy %.3f macro-F1 %.3f" % (
+                source, values["n"], values["accuracy"], values["macro_f1"]
+            ))
+    stability = summary.get("stability")
+    if stability:
+        print("stability over %d repeat(s): agreement %.1f%% (%d/%d records)" % (
+            stability["repeats"],
+            100.0 * stability["agreement_rate"],
+            stability["stable_records"],
+            stability["comparable_records"],
         ))
     if stats.get("stopped_reason"):
         print("stopped: %s" % stats["stopped_reason"])

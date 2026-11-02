@@ -11,7 +11,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .metrics import binary_report, classification_report, label_distribution, to_binary
+from .metrics import (
+    binary_report,
+    classification_report,
+    label_distribution,
+    per_source_report,
+    to_binary,
+)
 from .schema import ADDRESSED_LABELS, CSV_COLUMNS, SIX_CLASS_LABELS, AnnotationRecord
 
 
@@ -82,18 +88,24 @@ def summarize_run(
 def evaluate_against_gold(
     annotations: List[AnnotationRecord],
     gold: Dict[str, str],
+    sources: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Compare predictions with gold labels for the comments that have one."""
+    """Compare predictions with gold labels for the comments that have one.
+
+    ``sources`` maps ``comment_id`` to its source (file/hunk/human) so that the
+    per-source breakdown of the paper's Table VII can be reproduced.
+    """
     pairs = [
-        (gold[item.comment_id], item.final_label)
+        (item.comment_id, gold[item.comment_id], item.final_label)
         for item in annotations
         if item.comment_id in gold and not item.error and item.final_label
     ]
     if not pairs:
         return None
-    y_true = [truth for truth, _ in pairs]
-    y_pred = [pred for _, pred in pairs]
-    return {
+    y_true = [truth for _, truth, _ in pairs]
+    y_pred = [pred for _, _, pred in pairs]
+
+    payload: Dict[str, Any] = {
         "n": len(pairs),
         "six_class": classification_report(y_true, y_pred, SIX_CLASS_LABELS),
         "binary": binary_report(y_true, y_pred),
@@ -102,6 +114,56 @@ def evaluate_against_gold(
         ),
         "addressed_rate_pred": round(
             sum(1 for label in y_pred if label in ADDRESSED_LABELS) / float(len(y_pred)), 4
+        ),
+    }
+    if sources:
+        grouped: Dict[str, List[tuple]] = {}
+        for comment_id, truth, pred in pairs:
+            source = sources.get(comment_id)
+            if source:
+                grouped.setdefault(source, []).append((truth, pred))
+        if grouped:
+            payload["per_source"] = per_source_report(grouped)
+    return payload
+
+
+def compute_stability(results: List[Any]) -> Dict[str, Any]:
+    """Compare the labels of several runs over the same records (DEV-04).
+
+    The paper runs every model five times at temperature 0 and reports the
+    agreement, so a single run cannot be compared with its Table VII numbers
+    without knowing how stable the labels are.
+    """
+    per_run = []
+    labels_by_id: Dict[str, List[str]] = {}
+    for result in results:
+        run_labels: List[str] = []
+        for item in result.annotations:
+            if item.error or not item.final_label:
+                continue
+            run_labels.append(item.final_label)
+            labels_by_id.setdefault(item.comment_id, []).append(item.final_label)
+        per_run.append(label_distribution(run_labels, SIX_CLASS_LABELS))
+
+    stable = 0
+    unstable = []
+    for comment_id, labels in labels_by_id.items():
+        if len(labels) < 2:
+            continue
+        if len(set(labels)) == 1:
+            stable += 1
+        else:
+            unstable.append({"comment_id": comment_id, "labels": labels})
+    comparable = stable + len(unstable)
+    return {
+        "repeats": len(results),
+        "comparable_records": comparable,
+        "stable_records": stable,
+        "agreement_rate": round(stable / float(comparable), 4) if comparable else 0.0,
+        "unstable": unstable,
+        "per_repeat_distribution": per_run,
+        "cost_usd_total": round(
+            sum(float(getattr(result.stats, "cost_usd", 0.0)) for result in results), 4
         ),
     }
 
@@ -187,6 +249,44 @@ def write_run_report(summary: Dict[str, Any], path) -> Path:
             )
         lines.append("")
 
+        per_source = evaluation.get("per_source")
+        if per_source:
+            lines += ["### Per source", ""]
+            lines.append("| source | n | accuracy | macro-F1 | binary accuracy | binary macro-F1 |")
+            lines.append("| --- | --- | --- | --- | --- | --- |")
+            for source, values in per_source.items():
+                lines.append(
+                    "| %s | %s | %s | %s | %s | %s |"
+                    % (
+                        source,
+                        values["n"],
+                        values["accuracy"],
+                        values["macro_f1"],
+                        values["binary"]["accuracy"],
+                        values["binary"]["macro_f1"],
+                    )
+                )
+            lines.append("")
+
+    stability = summary.get("stability")
+    if stability:
+        lines += ["## Label stability across repeats", ""]
+        lines.append("- repeats = %s; comparable records = %s; stable = %s" % (
+            stability.get("repeats"),
+            stability.get("comparable_records"),
+            stability.get("stable_records"),
+        ))
+        lines.append("- agreement rate = %s" % stability.get("agreement_rate"))
+        lines.append("- total cost = $%s" % stability.get("cost_usd_total"))
+        lines.append("")
+        unstable = stability.get("unstable") or []
+        if unstable:
+            lines.append("| comment_id | labels (one per repeat) |")
+            lines.append("| --- | --- |")
+            for item in unstable[:20]:
+                lines.append("| %s | %s |" % (item["comment_id"], ", ".join(item["labels"])))
+            lines.append("")
+
     errors = summary.get("errors") or []
     lines += ["## Errors", ""]
     if errors:
@@ -205,6 +305,7 @@ __all__ = [
     "write_json",
     "summarize_run",
     "evaluate_against_gold",
+    "compute_stability",
     "write_run_report",
     "to_binary",
 ]

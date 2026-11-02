@@ -123,9 +123,16 @@ $env:OPENAI_API_KEY = "sk-..."
 
 # 4) 换数据集 / 只跑 human 子集 / 忽略缓存
 .\.venv\Scripts\python.exe run.py annotate -c config/config.yaml --dataset data/raw/gold150.csv --no-cache
+
+# 5) 稳定性实验：整批重复 5 次（对应论文 temperature=0 跑 5 次的协议，DEV-04）
+.\.venv\Scripts\python.exe run.py annotate -c config/config.openai.yaml --repeat 5 --write-report
 ```
 
 `python run.py -c config/config.yaml` 省略子命令时默认执行 `annotate`。
+
+`--repeat N` 的语义：整批记录连续跑 N 次；**只要 N>1 就禁用响应缓存**，否则第二次开始会命中缓存、
+一致性永远是 100%。CSV 取第 1 次的标注结果，N 次的分布与一致性写入 `summary.json` 的 `stability`
+与 `run_report.md`；累计费用超过 `llm.budget.max_usd` 时提前停止并在日志中告警。
 
 | 退出码 | 含义 |
 |--------|------|
@@ -142,7 +149,7 @@ $env:OPENAI_API_KEY = "sk-..."
 | 文件 | 内容 |
 |------|------|
 | `annotations.csv` | 标注结果，21 列固定 schema（见 `docs/annotation-csv-schema.md`，REQ-1.8） |
-| `summary.json` | 运行统计：标签分布、stage1 分布、addressed rate、tokens/cost、对 gold 的 OA/Macro-F1、prompt 指纹 |
+| `summary.json` | 运行统计：标签分布、stage1 分布、addressed rate、tokens/cost、对 gold 的 OA/Macro-F1、**分来源指标**、`--repeat>1` 时的 `stability`、prompt 指纹 |
 | `run_report.md` | 同一份统计的 markdown 版，可直接贴周报（`--write-report`） |
 | `requests.jsonl` | 每次 LLM 调用的审计日志：阶段、模型、token、费用、耗时、是否命中缓存（REQ-1.7） |
 | `run.log` | 运行日志（INFO 级，含 prompt 指纹与配置摘要，**不含 key**） |
@@ -157,9 +164,9 @@ $env:OPENAI_API_KEY = "sk-..."
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-154 个用例，覆盖：schema/标签归一、配置合并与校验、三种数据格式与 column_map、prompt 渲染与截断、
+161 个用例，覆盖：schema/标签归一、配置合并与校验、三种数据格式与 column_map、prompt 渲染与截断、
 JSON 解析与修复、价格/重试/缓存、流水线（缓存命中、预算停止、重试恢复、解析修复、单条失败隔离、
-审计日志无密钥）、CLI 退出码与产物、指标计算。
+审计日志无密钥）、CLI 退出码与产物（含 `--repeat` 稳定性）、指标计算（含分来源与一致性）。
 
 ## 8. 已知限制与下一步
 
@@ -167,7 +174,9 @@ JSON 解析与修复、价格/重试/缓存、流水线（缓存命中、预算�
    偏差登记见 `docs/paper-deviations.md` 的 DEV-01。拿到原 prompt 后应做 A/B 对比并 bump 版本号。
 2. **尚无真实 API 跑通 150 条 gold 的准确率**：目前只有离线 mock 验证（DEV-02/DEV-03）。
    下一步：配置 key → `config/config.openai.yaml` 跑 5 条 → 逐步放大到 150 条 → 对齐 Table VII。
-3. **分层指标未输出**：论文按 file-level / hunk-level / human 分别报告（83.6/78.1、89.2/83.4、85.6/62.4），
-   当前 `evaluation` 只给总体；下一步在 `swep.metrics` 加按 `source` 分组（DEV-06）。
-4. **5 次重复实验未做**：论文每个模型跑 5 次，当前只跑 1 次（DEV-04）。
+3. **分来源指标已实现但仅在小样例上验证**：`evaluation.per_source` 给出 file-level / hunk-level / human
+   的 OA 与 Macro-F1（对应论文 83.6/78.1、89.2/83.4、85.6/62.4）；n 很小时只对出现过的类做平均
+   （`observed_labels`），不能直接和论文数字对比（DEV-06）。
+4. **5 次重复实验的工程支持已就绪**：`--repeat 5` 输出一致性（`stability.agreement_rate`）与逐次分布，
+   但真实 API 的 5 次跑批尚未执行（DEV-04）。
 5. 与组长的数据接口约定见 `docs/annotation-csv-schema.md`；若 Zenodo 列名不同，只改 `data.column_map`。

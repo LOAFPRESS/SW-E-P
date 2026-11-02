@@ -67,12 +67,14 @@ python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
 .\.venv\Scripts\python.exe run.py validate-data -c config/config.yaml   # 只校验数据
 .\.venv\Scripts\python.exe run.py annotate -c config/config.yaml --write-report
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 154 passed
+.\.venv\Scripts\python.exe -m pytest tests -q                           # 161 passed
 ```
 
 真实调用：设置 `OPENAI_API_KEY` 后 `python run.py annotate -c config/config.openai.yaml`。
+稳定性实验：加 `--repeat 5`（自动禁用缓存，输出运行间一致率与逐次分布）。
 
-产物在 `artifacts/`：`annotations.csv`（21 列固定 schema）、`summary.json`、`run_report.md`、
+产物在 `artifacts/`：`annotations.csv`（21 列固定 schema）、`summary.json`（含分来源指标
+`evaluation.per_source`、`--repeat>1` 时的 `stability`）、`run_report.md`、
 `requests.jsonl`（逐次调用的 token/费用审计）、`run.log`、`cache.sqlite3`（断点续跑）。
 
 - 模块设计、配置项、CLI 与退出码：[docs/annotation-pipeline.md](docs/annotation-pipeline.md)
@@ -82,4 +84,5 @@ python -m venv .venv
 
 **下一步**：拿到 Zenodo 数据与原始 prompt 后，用 `data.column_map` 对接真实 CSV，
 小批量真实调用对齐论文 Table VII（Stage-1 OA 94.5%/F1 90.8%、Stage-2 OA 91.8%/F1 88.5%），
-并补充分来源指标（DEV-06）与 5 次重复实验（DEV-04）。
+并按 `evaluation.per_source` 逐行对照（file 83.6/78.1、hunk 89.2/83.4、human 85.6/62.4），
+最后用 `--repeat 5` 补运行间一致性。
