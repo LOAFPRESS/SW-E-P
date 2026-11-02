@@ -146,21 +146,29 @@ DEV-xx | 类别（数据/方法/实现/环境） | 论文做法 → 本项目做
   报告中明确写"标注模型：deepseek-chat + deepseek-reasoner（论文等价模型）"。
 - **状态**：设计内替代（2026-11-02），需在报告中单列。
 
-### DEV-10 · gold 二分类占比与论文 RQ3 的描述不一致（待核）
+### DEV-10 · gold 二分类占比与论文 RQ3 描述的差异（已查明：不是同一份总体）
 
-- **类别**：数据（待核）
-- **论文做法**：RQ3 描述 150 条 gold 中 Addressed（Partially + Fully）= 25.1%、Not Addressed = 74.9%。
-- **本项目做法**：按附录 `Final Result` 码映射后，Addressed = 71/150 = **47.3%**
-  （Valid-Partially 13 + Valid-Fully 58），Not Addressed（Valid-Unaddressed）= 43/150 = 28.7%，
-  其余为 None 11 / General 19 / Valid-Uncertain 6。
-- **原因**：尚未查明。可能论文 RQ3 的 25.1% 是另一种口径（例如只统计 `Valid-Unaddressed` 与
-  `Valid-Fully` 的对比、或只取 file-level、或把 `Valid-Uncertain` 并入 Not Addressed 之外的分母），
-  也可能我们用的 `(resolved)` 标签文件与论文 RQ3 的标签快照不同。
-- **影响**：若 RQ3 复现直接沿用 25.1% 的正负比来描述特征重要性，会与我们的标签分布冲突；
-  标注层（RQ2）不受影响，因为它是六分类。
-- **缓解/下一步**：向组长确认 RQ3 使用的标签文件与口径；查附录 RQ3 脚本对 `Final Result` 的过滤；
-  确认后在 `data/README.md` 与报告中写明采用哪种口径。
-- **状态**：**未解决，需与组长对齐**（2026-11-02）。
+- **类别**：数据（已澄清）
+- **论文做法**：RQ3 描述 Addressed = 25.1%、Not Addressed = 74.9%；AI-only 子集 Addressed = 9.2%。
+- **最初的困惑**：按附录 `Final Result` 码映射我们的 150 条 gold，Addressed（Partially + Fully）
+  = 71/150 = 47.3%，与 25.1% 差了一倍。
+- **查明结论（2026-11-02）**：25.1% 的分母**不是**那 150 条人工 gold，而是 RQ3 自己的建模总体——
+  附录 `address_feature_matrix/shape_labels_and_feature_under_LLM.py` 只保留 LLM 判定为 Valid 的评论
+  （`Resolution_Formated` 以 `2` 开头且不等于 `2,-1`），并把 `2,0→0`、`2,1→1`、`2,2→1` 二值化。
+  实际文件 `labels/all_reviews_with_LLM_labels.csv` 共 **3879** 行：`Change_Label=1` 973 行、
+  `0` 2906 行 → **25.08%**，与论文 25.1% 吻合。按 `Source == Human` 拆开后：
+  human 889 行（Addressed 78.6%）、AI-only **2990** 行（Addressed **9.16%**），
+  与论文的 2990 条 / 9.2% 完全对应。
+- **对我们的影响**：
+  - 150 条 gold 是**分层抽样**（两种来源各 50），不是 RQ3 的总体，47.3% 与 25.1% 并不矛盾；
+    我们在 150 条上做六分类评估（RQ2）不受影响。
+  - **RQ3 复现不必重建特征**：附录已给出论文用的输入
+    `address_feature_matrix/_selected_reviews_with_features/reviews_contains_valid_by_LLM_lda_topics_selected.csv`
+    （3879 行 × 33 列，含 6 个 LDA topic 概率）与标签 `labels/all_reviews_with_LLM_labels.csv`，
+    即论文 RF 的同一份数据。杨弋驰可直接用这两份文件对齐 88.6% / 0.846（150 条 gold）与
+    91.7% / 0.647（AI-only）两组结果。
+  - 我们自己跑批产出的 3879 条 LLM 标签可以与附录这份标签做一致性对比，作为"prompt 移植是否成功"的量化证据。
+- **状态**：已澄清（2026-11-02），无需向组长追问口径；改由组长决定 RQ3 是用附录现成标签还是用我们的重跑标签。
 
 ## 复现与追溯
 

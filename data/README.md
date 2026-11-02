@@ -52,8 +52,10 @@ C:\Users\刘思懿\Documents\软件工程\P1\AIReviewActionAnalysis(Zenodo)
 | `File_Deleted` | 6 条 |
 | 未匹配 URL | 0 |
 
-> ⚠️ 这里的 Addressed 47.3% 与论文 RQ3 描述的 25.1% 不一致，原因待核，
-> 见 `docs/paper-deviations.md` 的 **DEV-10**。标注六分类不受影响。
+> ⚠️ 这里的 Addressed 47.3% 与论文 RQ3 描述的 25.1% 看似矛盾，实际是**不同总体**：论文的 25.1%
+> 是 RQ3 建模集（附录 `labels/all_reviews_with_LLM_labels.csv`，3879 条 LLM 判为 Valid 的评论，
+> 其中 973 条 Addressed = 25.08%）的比例；我们的 150 条是**分层抽样**（两种来源各 50）。
+> 详见 `docs/paper-deviations.md` 的 **DEV-10**。做 RQ3 时请直接用附录那份 3879 行特征矩阵与标签。
 
 ## 2. 合成样例（仅冒烟用）
 
@@ -135,3 +137,16 @@ data:
 ```
 
 出错时会打印 `Available columns: [...]`，直接把真实列名抄进 `column_map` 即可。
+
+## 5. RQ3 的输入（给杨弋驰 / 组长）
+
+附录已经给出了论文随机森林用的**同一份数据**，不必重建特征：
+
+| 文件（相对 Zenodo 根） | 内容 |
+|---|---|
+| `address_feature_matrix/_selected_reviews_with_features/reviews_contains_valid_by_LLM_lda_topics_selected.csv` | 3879 行 × 33 列特征（含 6 个 `LDA_Topic_Prob_*` 与 `LDA_Topic_Label`） |
+| `address_feature_matrix/labels/all_reviews_with_LLM_labels.csv` | `Comment_ID` + `Change_Label`（`2,0→0`、`2,1/2,2→1`） |
+
+按 `Comment_ID` 合并即可复现论文 RQ3：全量 3879 条 Addressed 25.08%、Macro-F1 0.846；
+去掉 `Source == "Human"` 后 2990 条 Addressed 9.16%、Macro-F1 0.647。
+这两组数字与论文 §V-C 完全对应（见 `docs/paper-deviations.md` DEV-10）。
