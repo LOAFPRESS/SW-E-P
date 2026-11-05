@@ -114,6 +114,24 @@ Qwen 只需换 `-c config/config.qwen.yaml` 并设 `DASHSCOPE_API_KEY`；OpenAI 
 （Stage-1 OA 94.5%/F1 90.8%、Stage-2 OA 91.8%/F1 88.5%；file 83.6/78.1、hunk 89.2/83.4、human 85.6/62.4）
 → 用 `--repeat 5` 补运行间一致性 → 与组长对齐 DEV-10 的 RQ3 标签口径。
 
+### 真实跑批结果（2026-11-05，已完成）
+
+`config/config.deepseek.yaml` 在 150 条 gold 上跑通：262 次调用、$0.2401、15 分钟、零失败。
+与论文 Table VII 对照：
+
+| 视角 | 本项目 | 论文 |
+| --- | --- | --- |
+| Stage-1 | 87.3% / 74.8% | 94.5% / 90.8% |
+| Stage-2 | 87.2% / 86.6% | 91.8% / 88.5% |
+| 六类 | 78.0% / 76.8% | 86.1% / 74.6% |
+| 二分类 | **91.3% / 91.3%** | 91.5% / 89.8% |
+
+二分类基本对齐（核心结论"是否被采纳"迁移成功），六分类差距集中在
+None/General/Valid-Unaddressed 的档位边界、以 file-level 为主。
+细节、逐类 P/R/F1、错误分析与复现命令：[docs/rq2-results.md](docs/rq2-results.md)；
+对照脚本 `scripts/compare_with_paper.py` 可重打这两张表。
+
+
 ## RQ3 模块（特征 + 随机森林 + SHAP）· W5–W6
 
 用附录给的同一份特征矩阵（3879 条 LLM 判 Valid 的评论 × 33 列）与标签，复现论文的
