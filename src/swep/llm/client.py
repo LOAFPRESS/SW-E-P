@@ -25,7 +25,7 @@ text before it reaches logs (SEC-1.1/SEC-1.2).
 """
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from ..errors import ConfigError, LLMCallError
 from ..logging_utils import get_logger
@@ -72,6 +72,7 @@ class OpenAIClient(LLMClient):
         if base_url:
             client_kwargs["base_url"] = base_url
         self._client = openai.OpenAI(**client_kwargs)
+        self._sdk_keys: Optional[Set[str]] = None
 
     # ------------------------------------------------------------------ call
     def complete(
@@ -139,6 +140,26 @@ class OpenAIClient(LLMClient):
             return effort != "none"
         return _is_reasoning_model(model)
 
+    def _sdk_parameters(self) -> Set[str]:
+        """Keyword arguments the installed SDK actually accepts on ``create()``.
+
+        The SDK lags the providers: openai 1.55.3 has no ``reasoning_effort``
+        keyword even though the APIs accept it.  Anything the SDK does not know
+        is forwarded through ``extra_body``, which is serialised into the JSON
+        request body verbatim, so both cases work without version sniffing.
+        """
+        if self._sdk_keys is None:
+            try:
+                import inspect
+
+                self._sdk_keys = set(
+                    inspect.signature(self._client.chat.completions.create).parameters
+                )
+            except (AttributeError, TypeError, ValueError):  # pragma: no cover - exotic SDKs
+                self._sdk_keys = {"model", "messages", "temperature", "max_tokens",
+                                  "max_completion_tokens", "extra_body"}
+        return self._sdk_keys
+
     def _build_request(
         self,
         model: str,
@@ -159,8 +180,8 @@ class OpenAIClient(LLMClient):
             if stage_body:
                 base_body.update(stage_body)
                 extra["extra_body"] = base_body
-        extra_body = extra.pop("extra_body", None)
-        thinking = self._thinking_enabled(model, extra, extra_body)
+        body_overrides = dict(extra.pop("extra_body", None) or {})
+        thinking = self._thinking_enabled(model, extra, body_overrides)
         request: Dict[str, Any] = {"model": model, "messages": messages}
         if _is_reasoning_model(model):
             # OpenAI's o* family renamed the output cap; DeepSeek/Qwen keep max_tokens.
@@ -169,11 +190,15 @@ class OpenAIClient(LLMClient):
             request["max_tokens"] = int(max_output_tokens)
         if not thinking:
             request["temperature"] = float(temperature)
+        sdk_keys = self._sdk_parameters()
         for key, value in extra.items():
-            request[key] = value
-        if isinstance(extra_body, dict) and extra_body:
+            if key in sdk_keys:
+                request[key] = value
+            else:
+                body_overrides[key] = value
+        if body_overrides:
             merged = dict(request.get("extra_body") or {})
-            merged.update(extra_body)
+            merged.update(body_overrides)
             request["extra_body"] = merged
         return request
 

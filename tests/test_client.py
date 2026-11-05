@@ -1,4 +1,4 @@
-"""Tests for the OpenAI-compatible client used by every hosted provider.
+﻿"""Tests for the OpenAI-compatible client used by every hosted provider.
 
 No network: the SDK object is replaced with a small fake that records the request
 and returns a canned response.  The interesting behaviour is the request shape
@@ -106,7 +106,9 @@ class TestRequestShape:
             model_params={"o4-mini": {"reasoning_effort": "medium"}},
         )
         request = client._build_request("o4-mini", MESSAGES, 0, 256)
-        assert request["reasoning_effort"] == "medium"
+        # the installed SDK has no ``reasoning_effort`` keyword, so it travels
+        # through extra_body (serialised into the JSON body); same on the wire.
+        assert request["extra_body"]["reasoning_effort"] == "medium"
         assert "temperature" not in request
 
     def test_model_params_override_defaults(self):
@@ -137,7 +139,7 @@ class TestRequestShape:
         request = client._build_request("deepseek-flash", MESSAGES, 0, 512)
         assert request["temperature"] == 0.0
         assert request["max_tokens"] == 512
-        assert request["reasoning_effort"] == "none"
+        assert request["extra_body"]["reasoning_effort"] == "none"
 
     def test_reasoning_effort_high_disables_temperature(self):
         client = OpenAIClient(
@@ -147,6 +149,7 @@ class TestRequestShape:
         request = client._build_request("deepseek-flash", MESSAGES, 0, 4000)
         assert "temperature" not in request
         assert request["max_tokens"] == 4000
+        assert request["extra_body"]["reasoning_effort"] == "high"
 
 
 class TestAnswerExtraction:
