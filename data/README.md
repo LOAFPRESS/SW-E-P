@@ -150,3 +150,20 @@ data:
 按 `Comment_ID` 合并即可复现论文 RQ3：全量 3879 条 Addressed 25.08%、Macro-F1 0.846；
 去掉 `Source == "Human"` 后 2990 条 Addressed 9.16%、Macro-F1 0.647。
 这两组数字与论文 §V-C 完全对应（见 `docs/paper-deviations.md` DEV-10）。
+
+**这两份文件已接入代码**，一行命令即可复现（2026-11-05 实测 0.8876/0.8484 与 0.9187/0.6553）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_rq3.py --output artifacts\rq3\all_reviews
+.\.venv\Scripts\python.exe scripts\run_rq3.py --ai-only --output artifacts\rq3\ai_only
+```
+
+注意事项：
+
+- 特征表只有 33 列，论文特征清单里的 10 个列（`Code_Total_Length`、`Timeline_Index` 等）不在其中；
+  我们不做替代，只把它们记进报告的 "missing" 段（DEV-11）。
+- `Source` 列是工具全名（如 `anc95/ChatGPT-CodeReview`），不是论文图里的 "Is Action 3" 编号；
+  代码按 `Source_<tool>` one-hot 编码，语义相同、字面不同。
+- 标签文件是**论文作者**的 LLM 标签；我们重跑的 3879 条标签接入方式见
+  [docs/rq3-rf-shap.md](../docs/rq3-rf-shap.md) §7。
+

@@ -11,6 +11,7 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
+pytest-of-*/
 
 # Pipeline outputs: reproducible, not source.  A curated sample run lives in
 # docs/ for the report, but day-to-day artifacts stay untracked.

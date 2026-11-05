@@ -1,16 +1,33 @@
-# Runtime dependencies of the two-stage annotation module (Python 3.8+).
+# Runtime dependencies of the reproduction project (Python 3.8+).
 #
-# Only these two packages are needed for `python run.py annotate`:
-#   * PyYAML is imported when the configuration file is read;
-#   * openai is imported lazily, and only when llm.provider == "openai".
-#     With the default `provider: mock` the pipeline runs offline, so a fresh
-#     clone works before any package is installed except PyYAML.
+# Two dependency sets with different triggers:
 #
+#   * Two-stage annotation module (RQ2) — `python run.py annotate`
+#       PyYAML     imported when the configuration file is read;
+#       openai     imported lazily, and only when llm.provider == "openai",
+#                  "deepseek" or "qwen". With `provider: mock` the pipeline runs
+#                  fully offline, so a fresh clone works with PyYAML alone.
+#
+#   * RQ3 random-forest + SHAP module — `python scripts/run_rq3.py`
+#       pandas, scikit-learn, shap, matplotlib, scipy.
+#
+# Pins below are the versions the module was validated against on Python 3.8.6
+# (the interpreter required by URS NFR "Python 3.8+"; a local `.venv` holds them).
 # openai is pinned to 1.55.3 because newer releases require jiter>=0.10, which
-# publishes no wheel for Python 3.8 (this is the version constraint of the
-# project environment, see URS NFR "Python 3.8+").
+# publishes no wheel for Python 3.8.
+
+# --- annotation pipeline (RQ2) ---
 openai==1.55.3
 PyYAML>=5.4,<7
 
-# Development / CI
+# --- random forest + SHAP (RQ3) ---
+pandas==2.0.3
+numpy==1.24.4
+scipy==1.10.1
+scikit-learn==1.3.2
+shap==0.44.1
+matplotlib==3.7.5
+
+# --- development / CI ---
 pytest>=7,<9
+tqdm>=4.62

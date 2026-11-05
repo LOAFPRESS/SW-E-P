@@ -34,7 +34,7 @@ SW-E-P/
 ├── proposal.md                    # 项目提案（Task1，Markdown 版）
 ├── Task1-Project Proposal-Final.docx  # 项目提案（Word 版，含格式模板）
 ├── run.py                         # 唯一入口（annotate / validate-data）
-├── requirements.txt               # 标注模块运行依赖
+├── requirements.txt               # 运行依赖（标注流水线 + RQ3 建模）
 ├── config/
 │   ├── config.yaml                # 默认配置（mock provider，离线可跑）
 │   ├── config.gold150.yaml        # 真实 150 条 gold 的 mock 冒烟
@@ -48,21 +48,24 @@ SW-E-P/
 │   └── CHANGELOG.md               # prompt 版本与来源对照（DOM-1.2）
 ├── src/swep/                      # 两阶段标注流水线源码
 │   ├── cli.py  config.py  pipeline.py  schema.py  metrics.py  export.py  providers.py
+│   ├── features.py  rf.py  explain.py  rq3.py  # RQ3：特征矩阵 / 5 折 RF / SHAP / 编排
 │   ├── data/loader.py             # 多格式读取 + column_map 列名适配
 │   ├── data/zenodo.py             # Zenodo 附录 → 150 条 gold + provenance
 │   ├── prompts/builder.py         # 模板渲染、上下文截断、版本指纹
 │   └── llm/                       # mock / OpenAI 兼容客户端、解析、重试、缓存、计价
 ├── scripts/
-│   └── build_gold_dataset.py      # 从本机 Zenodo 目录重建 data/gold150.jsonl
+│   ├── build_gold_dataset.py      # 从本机 Zenodo 目录重建 data/gold150.jsonl
+│   └── run_rq3.py                 # RQ3 入口：分层 5 折 RF + SHAP（--ai-only 对照）
 ├── data/
 │   ├── README.md                  # 数据来源、构建规则、字段契约、别名表
 │   ├── gold150.jsonl              # 150 条真实 gold（+ .provenance.json）
 │   └── samples/sample_comments.jsonl  # 12 条合成样例（synthetic: true）
-├── tests/                         # 241 个 pytest 用例
+├── tests/                         # 292 个 pytest 用例
 ├── docs/
-│   ├── annotation-pipeline.md     # 模块设计说明（架构/配置/用法/产物）
+│   ├── annotation-pipeline.md     # 标注模块设计说明（架构/配置/用法/产物）
 │   ├── annotation-csv-schema.md   # annotations.csv 21 列数据契约
-│   └── paper-deviations.md        # 与论文的偏差登记（DEV-01 ~ DEV-10）
+│   ├── rq3-rf-shap.md             # RQ3 复现协议、结果对照与交接说明
+│   └── paper-deviations.md        # 与论文的偏差登记（DEV-01 ~ DEV-12）
 └── artifacts/                     # 运行产物（gitignore，可重建）
 ```
 
@@ -88,7 +91,7 @@ setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会�
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache  # 3 条试跑
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report       # 150 条正式跑
 
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 247 passed
+.\.venv\Scripts\python.exe -m pytest tests -q                           # 292 passed
 ```
 
 `config/config.deepseek.yaml` 用的是 DeepSeek 2026-11 的模型名：`deepseek-flash`
@@ -110,3 +113,30 @@ Qwen 只需换 `-c config/config.qwen.yaml` 并设 `DASHSCOPE_API_KEY`；OpenAI 
 **下一步**：设 `DEEPSEEK_API_KEY` 跑 150 条 → 用 `evaluation.per_source` 对照论文 Table VII
 （Stage-1 OA 94.5%/F1 90.8%、Stage-2 OA 91.8%/F1 88.5%；file 83.6/78.1、hunk 89.2/83.4、human 85.6/62.4）
 → 用 `--repeat 5` 补运行间一致性 → 与组长对齐 DEV-10 的 RQ3 标签口径。
+
+## RQ3 模块（特征 + 随机森林 + SHAP）· W5–W6
+
+用附录给的同一份特征矩阵（3879 条 LLM 判 Valid 的评论 × 33 列）与标签，复现论文的
+分层 5 折随机森林与 SHAP 解释，**不需要重建特征、不需要 API key**：
+
+```powershell
+# 主实验：3879 条，保留 Human（36 个特征）
+.\.venv\Scripts\python.exe scripts\run_rq3.py --output artifacts\rq3\all_reviews
+
+# 对照实验：去掉 Human 的 2990 条（33 个特征）
+.\.venv\Scripts\python.exe scripts\run_rq3.py --ai-only --output artifacts\rq3\ai_only
+```
+
+复现结果与论文对照：
+
+| 变体 | 样本 | 本项目 Accuracy / Macro-F1 | 论文 | 差 |
+| --- | --- | --- | --- | --- |
+| 主实验 | 3879 | **0.8876 / 0.8484** | 0.886 / 0.846 | +0.16 pp / +0.0024 |
+| AI-only | 2990 | **0.9187 / 0.6553** | 0.917 / 0.647 | +0.17 pp / +0.008 |
+
+产物：`rq3_metrics.json`、`rq3_feature_importance.csv`（含 rank）、`rq3_group_importance.csv`、
+`rq3_shap_summary.png`、`rq3_shap_bar.png`、`rq3_report.md`（五折表 + SHAP Top-15 + 缺失列清单）。
+
+- 协议逐条对齐、SHAP 结果表、交接给杨弋驰的说明：[docs/rq3-rf-shap.md](docs/rq3-rf-shap.md)
+- 特征可用性（缺 10 列）与"未用我们重跑标签"两条偏差：DEV-11 / DEV-12（见 docs/paper-deviations.md）
+

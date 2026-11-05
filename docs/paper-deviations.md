@@ -175,6 +175,40 @@ DEV-xx | 类别（数据/方法/实现/环境） | 论文做法 → 本项目做
   - 我们自己跑批产出的 3879 条 LLM 标签可以与附录这份标签做一致性对比，作为"prompt 移植是否成功"的量化证据。
 - **状态**：已澄清（2026-11-02），无需向组长追问口径；改由组长决定 RQ3 是用附录现成标签还是用我们的重跑标签。
 
+### DEV-11 · RQ3 特征表缺 10 列：36 个特征而非论文清单的 46 个
+
+- **类别**：数据（特征可用性）
+- **论文做法**：RQ3 的特征清单有 36 个特征，来自论文的特征工程脚本；附录提供了其中 33 列可直接取用的数值。
+- **本项目做法**：直接用附录 `_selected_reviews_with_features/reviews_contains_valid_by_LLM_lda_topics_selected.csv`
+  （3879 行 × 33 列）构建矩阵，**不做任何替代或插补**。以下 10 个论文特征在该表里不存在：
+  `Code_Total_Length`、`Comment_Changes`、`Commit_Accumulated_Changed_File_Count`、
+  `Commit_Accumulated_Total_Add_Line_Count`、`Commit_Accumulated_Total_Change_Line_Count`、
+  `File_Change_Line_Count`、`Repo_Total_File_Number`、`Repo_Total_PR_Number`、
+  `Thread_Companion_Count`、`Timeline_Index`。
+  `swep.features.build_feature_matrix` 把它们记进 `missing["numeric"]`，并在
+  `artifacts/rq3/*/rq3_report.md` 的 "Features that the input table does not provide" 段落原样列出。
+- **原因**：这些列需要从 GitHub API 的仓库/PR/时间线元数据重新采集，附录未随数据集发布（属于论文的原始爬取产物）。
+- **影响**：实际建模 36 个特征（repo 3 / modification 12 / textual 5 / action 10 / topic 6），
+  与论文报告的"36 个特征"数量一致、组成可能略有出入；实测 accuracy 0.8876 / macro-F1 0.8484
+  （论文 0.886 / 0.846），AI-only 0.9187 / 0.6553（论文 0.917 / 0.647），
+  差距均在 0.2 pp / 0.008 以内，说明缺失的 10 列对模型贡献很小，但**不能声称逐特征完全一致**。
+- **缓解/下一步**：若需要补齐，可从 `_data/` 的原始爬取数据重算其中若干列（如
+  `Commit_Accumulated_*`），再重跑 `scripts/run_rq3.py` 做敏感性对比；当前结论不依赖这些列。
+- **状态**：已记录（2026-11-05），随 W5 交付。
+
+### DEV-12 · RQ3 用附录现成标签复现，尚未用我们重跑的标签做敏感性分析
+
+- **类别**：方法
+- **论文做法**：RQ3 的标签由论文作者调用 LLM 批量标注后二值化（`2,0→0`、`2,1→1`、`2,2→1`）。
+- **本项目做法**：第一版直接使用附录 `labels/all_reviews_with_LLM_labels.csv`（3879 行），
+  以验证"特征 + 建模协议"这条链路；我们自己的 3879 条重跑标签尚未产出（等 API key）。
+- **原因**：拿不到 key 时优先打通 RQ3 全链路，避免整条线阻塞。
+- **影响**：当前 88.76% / 84.84% 与 91.87% / 65.53% 复现的是论文的**建模协议**，
+  不包含"我们重新标注后结果是否稳定"这一层证据。
+- **缓解/下一步**：拿到 key 后跑同一份 3879 条，用 `scripts/run_rq3.py --labels <我们的 CSV>`
+  重跑，比较两次标签的一致率与指标漂移；这是最有力的"prompt 移植正确性"量化证据。
+- **状态**：待办（2026-11-05），阻塞于 API key。
+
 ## 复现与追溯
 
 - 每次运行的 `summary.json` 含 `run_fingerprint` = `prompt version + 两个模板的 sha256 前缀`（DOM-1.4）。
