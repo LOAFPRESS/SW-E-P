@@ -1,4 +1,4 @@
-# SW-E-P（Software Engineering Project）
+﻿# SW-E-P（Software Engineering Project）
 
 > 软件工程项目 · 小组编号：8
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
@@ -60,7 +60,7 @@ SW-E-P/
 │   ├── README.md                  # 数据来源、构建规则、字段契约、别名表
 │   ├── gold150.jsonl              # 150 条真实 gold（+ .provenance.json）
 │   └── samples/sample_comments.jsonl  # 12 条合成样例（synthetic: true）
-├── tests/                         # 292 个 pytest 用例
+├── tests/                         # 295 个 pytest 用例
 ├── docs/
 │   ├── annotation-pipeline.md     # 标注模块设计说明（架构/配置/用法/产物）
 │   ├── annotation-csv-schema.md   # annotations.csv 21 列数据契约
@@ -91,7 +91,7 @@ setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会�
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache  # 3 条试跑
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report       # 150 条正式跑
 
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 292 passed
+.\.venv\Scripts\python.exe -m pytest tests -q                           # 295 passed
 ```
 
 `config/config.deepseek.yaml` 用的是 DeepSeek 2026-11 的模型名：`deepseek-flash`

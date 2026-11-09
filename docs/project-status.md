@@ -1,4 +1,4 @@
-# 项目进度与交接（2026-11-09 核对）
+﻿# 项目进度与交接（2026-11-09 核对）
 
 > 用途：把计划书的 8 周任务、仓库里实际存在的东西、还没人认领的空白放在一张表里，
 > 让组里其他成员（或下一次接手的自己）能直接看出"现在在哪、下一步做什么"。
@@ -17,7 +17,7 @@
 | `b666bfe` | 查明 DEV-10（RQ3 的 25.1% 分母是 3879 条建模集） |
 | `e7df0e9` | 论文附录原版 prompt、真实 `data/gold150.jsonl`、DeepSeek/Qwen provider |
 | `1839889` | 适配 2026-11 的 DeepSeek API（`deepseek-flash`、思考模式、阶段参数） |
-| `af52cb7` | RQ3 复现（W5–W6）：`features/rf/explain/rq3`、`scripts/run_rq3.py`、292→… 测试 |
+| `af52cb7` | RQ3 复现（W5–W6）：`features/rf/explain/rq3`、`scripts/run_rq3.py`、295 测试 |
 | `c6e89bb` | RQ2 首次真实跑批结果（`docs/rq2-results.md`） |
 | `a73c461` | 修 openai 1.55.3 不认识 `reasoning_effort`（改走 `extra_body`） |
 | 本条提交 | prompt v2.1 A/B、`run.py rq3` 单一入口、四条结论核对、本状态表 |
