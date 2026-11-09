@@ -100,6 +100,8 @@ setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会�
 
 Qwen 只需换 `-c config/config.qwen.yaml` 并设 `DASHSCOPE_API_KEY`；OpenAI 对照用 `config/config.openai.yaml`。
 稳定性实验：加 `--repeat 5`（自动禁用缓存，输出运行间一致率与逐次分布）。
+prompt 迭代：`config/config.deepseek-v21.yaml` 用 `prompts/stage1_v2_1_guidance.md`
+（在附录原文上补四条消歧规则），结果与 v2 的 A/B 对照见 `docs/rq2-results.md`。
 
 产物在 `artifacts/`：`annotations.csv`（21 列固定 schema）、`summary.json`（含分来源指标
 `evaluation.per_source`、`--repeat>1` 时的 `stability`）、`run_report.md`、
@@ -110,26 +112,26 @@ Qwen 只需换 `-c config/config.qwen.yaml` 并设 `DASHSCOPE_API_KEY`；OpenAI 
 - 与论文的偏差（模型替代、`describe_code_change` 重建、gold 口径待核等）：[docs/paper-deviations.md](docs/paper-deviations.md)
 - 数据来源与列名映射：[data/README.md](data/README.md)
 
-**下一步**：设 `DEEPSEEK_API_KEY` 跑 150 条 → 用 `evaluation.per_source` 对照论文 Table VII
-（Stage-1 OA 94.5%/F1 90.8%、Stage-2 OA 91.8%/F1 88.5%；file 83.6/78.1、hunk 89.2/83.4、human 85.6/62.4）
-→ 用 `--repeat 5` 补运行间一致性 → 与组长对齐 DEV-10 的 RQ3 标签口径。
+**下一步**：`--repeat 5` 补运行间一致性（DEV-04）→ v2.1 规则做 held-out 复核（DEV-13）
+→ 与组长对齐 DEV-10 的 RQ3 标签口径。
 
-### 真实跑批结果（2026-11-05，已完成）
+### 真实跑批结果（2026-11-05 / 11-09，已完成）
 
-`config/config.deepseek.yaml` 在 150 条 gold 上跑通：262 次调用、$0.2401、15 分钟、零失败。
-与论文 Table VII 对照：
+两次运行都在 150 条 gold 上零失败跑完（v2 `config.deepseek.yaml`：262 次调用、$0.2401、15 分钟；
+v2.1 `config.deepseek-v21.yaml`：265 次调用、$0.2962、21 分钟）。与论文 Table VII 对照：
 
-| 视角 | 本项目 | 论文 |
-| --- | --- | --- |
-| Stage-1 | 87.3% / 74.8% | 94.5% / 90.8% |
-| Stage-2 | 87.2% / 86.6% | 91.8% / 88.5% |
-| 六类 | 78.0% / 76.8% | 86.1% / 74.6% |
-| 二分类 | **91.3% / 91.3%** | 91.5% / 89.8% |
+| 视角 | v2（附录原文 prompt） | v2.1（+四条消歧规则） | 论文 |
+| --- | --- | --- | --- |
+| Stage-1 | 87.3% / 74.8% | **91.3% / 80.8%** | 94.5% / 90.8% |
+| Stage-2 | 87.2% / 86.6% | 86.7% / 86.3% | 91.8% / 88.5% |
+| 六类 | 78.0% / 76.8% | **81.3% / 80.1%** | 86.1% / 74.6% |
+| 二分类 | **91.3% / 91.3%** | **91.3% / 91.3%** | 91.5% / 89.8% |
 
 二分类基本对齐（核心结论"是否被采纳"迁移成功），六分类差距集中在
-None/General/Valid-Unaddressed 的档位边界、以 file-level 为主。
-细节、逐类 P/R/F1、错误分析与复现命令：[docs/rq2-results.md](docs/rq2-results.md)；
-对照脚本 `scripts/compare_with_paper.py` 可重打这两张表。
+None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 把 file-level 六类从
+62.0% 提到 74.0%，但规则是看着这 150 条的错误写的（DEV-13，样本内、偏乐观）。
+细节、逐类 P/R/F1、A/B 转移表：[docs/rq2-results.md](docs/rq2-results.md)；
+`scripts/compare_with_paper.py`（对照论文）与 `scripts/compare_runs.py`（两次运行互比）可重打所有表。
 
 
 ## RQ3 模块（特征 + 随机森林 + SHAP）· W5–W6
@@ -139,11 +141,17 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主。
 
 ```powershell
 # 主实验：3879 条，保留 Human（36 个特征）
-.\.venv\Scripts\python.exe scripts\run_rq3.py --output artifacts\rq3\all_reviews
+.\.venv\Scripts\python.exe run.py rq3 --output artifacts\rq3\all_reviews
 
 # 对照实验：去掉 Human 的 2990 条（33 个特征）
-.\.venv\Scripts\python.exe scripts\run_rq3.py --ai-only --output artifacts\rq3\ai_only
+.\.venv\Scripts\python.exe run.py rq3 --ai-only --output artifacts\rq3\ai_only
+
+# 论文四条实践结论在本数据上的采纳率（供报告"复现原结论"一节）
+.\.venv\Scripts\python.exe scripts\rq3_conclusions.py --json artifacts\rq3\conclusions.json
 ```
+
+`scripts/run_rq3.py` 仍是可用的薄封装（参数相同），但推荐用 `run.py rq3`，
+这样整个项目只有一个入口（URS REQ-1.13）。
 
 复现结果与论文对照：
 
@@ -156,5 +164,11 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主。
 `rq3_shap_summary.png`、`rq3_shap_bar.png`、`rq3_report.md`（五折表 + SHAP Top-15 + 缺失列清单）。
 
 - 协议逐条对齐、SHAP 结果表、交接给杨弋驰的说明：[docs/rq3-rf-shap.md](docs/rq3-rf-shap.md)
+- 论文四条实践结论的逐条核对：[docs/rq3-conclusions.md](docs/rq3-conclusions.md)
 - 特征可用性（缺 10 列）与"未用我们重跑标签"两条偏差：DEV-11 / DEV-12（见 docs/paper-deviations.md）
+
+## 项目进度与交接
+
+计划书 8 周任务、仓库里实际有的东西、还空着的活：**[docs/project-status.md](docs/project-status.md)**。
+当前状态：W1–W6 的代码与结果均在仓库内，W7–W8 的报告正文仍待组长牵头。
 

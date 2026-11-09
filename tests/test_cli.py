@@ -1,6 +1,7 @@
 """CLI-level tests: exit codes, artifacts and overrides."""
 
 import csv
+from pathlib import Path
 
 import pytest
 
@@ -107,3 +108,39 @@ class TestParser:
         output = capsys.readouterr().out
         assert "annotate" in output
         assert "validate-data" in output
+        assert "rq3" in output
+
+    def test_rq3_subcommand_is_registered(self):
+        args = cli.build_parser().parse_args(["rq3", "--ai-only"])
+        assert args.command == "rq3"
+        assert args.ai_only is True
+
+
+ZENODO_MATRIX = Path(cli.__file__).resolve().parents[2].parent / "AIReviewActionAnalysis(Zenodo)" / "address_feature_matrix"
+
+
+@pytest.mark.skipif(not ZENODO_MATRIX.is_dir(), reason="the Zenodo feature matrix is not available on this machine")
+class TestRq3Command:
+    def test_runs_the_reduced_experiment(self, tmp_path, capsys):
+        # Two folds and ten trees keep the test fast; SHAP is skipped on purpose.
+        code = cli.main(
+            [
+                "rq3",
+                "--no-shap",
+                "--no-plot",
+                "--n-splits",
+                "2",
+                "--n-estimators",
+                "10",
+                "--output",
+                str(tmp_path / "rq3"),
+            ]
+        )
+        assert code == cli.EXIT_OK
+        assert "rows: 3879" in capsys.readouterr().out
+        assert (tmp_path / "rq3" / "rq3_metrics.json").is_file()
+
+    def test_missing_input_returns_a_config_error(self, tmp_path, capsys):
+        code = cli.main(["rq3", "--zenodo-root", str(tmp_path / "nope"), "--output", str(tmp_path / "out")])
+        assert code == cli.EXIT_CONFIG
+        assert "rq3" in capsys.readouterr().err

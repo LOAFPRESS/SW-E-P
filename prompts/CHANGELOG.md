@@ -4,6 +4,41 @@
 > 版本号会写进 `annotations.csv` 的 `prompt_version` 列，`summary.json` 的 `run_fingerprint`
 > 还包含两个模板的 sha256 前缀，因此"哪一版 prompt 产出了哪批标签"是可追溯的。
 
+## v2.1-guidance-2026-11-09（2026-11-09，刘思懿）· Stage-1 边界补充
+
+**背景**：v2（附录原文）在 150 条 gold 上 Stage-1 只有 87.3% / macro-F1 74.8%（论文 94.5 / 90.8），
+错误集中在三类（见 `docs/rq2-results.md` 的错误分析）：
+
+- gold `General` 被判成 `None`：评论先写"没发现严重问题"，再列"加注释/统一命名"这类改进建议；
+- gold `Valid-Unaddressed` 被判成 `General`：建议用了 "could be improved / consider" 这类措辞，但其实点了具体符号；
+- gold `General` 被判成 `Valid`：先复述补丁做了什么，再给泛泛建议。
+
+**改动**（仅 Stage-1；Stage-2 保持 v2 原文，以便 A/B 只隔离出 Stage-1 的影响）
+
+- 新增 `prompts/stage1_v2_1_guidance.md`：在附录原文的分类说明之前插入四条消歧规则（不改动原文措辞）：
+  1. "没发现严重问题 + 仍列出改进建议"算 general，不得判 `None`；只有"纯表扬 / 复述改动 / 只说代码没问题且不提要求"才是 `None`；
+  2. 措辞含糊（could be improved / consider）本身不构成 general；只要点了具体位置、函数、变量、配置键或具体改法，就算 valid；
+  3. 复述补丁内容的段落是描述，不是 item，也不影响其它建议的归类；
+  4. 很短的评论只要对着 Reviewed Change 看是在要求具体修改，就算 valid。
+- 新增 `config/config.deepseek-v21.yaml`：`prompts.stage1` 指向新模板、`version: v2.1-guidance-2026-11-09`，
+  其余（模型、价格、预算、缓存路径）与 `config.deepseek.yaml` 完全一致，保证两次运行可比。
+
+**为什么只写规则、不写示例**：示例若取自这 150 条 gold，等于把测试集泄漏进 prompt，因此只写措辞规则（DEV-13）。
+
+**A/B 结果**（2026-11-09，同一批 150 条 gold，`artifacts/deepseek-v21/`，fingerprint `b07c5940dfe9`）：
+
+| 视角 | v2（原文） | v2.1（+四条规则） | 变化 |
+| --- | --- | --- | --- |
+| Stage-1 Acc / Macro-F1 | 87.3% / 74.8% | **91.3% / 80.8%** | +4.0 / +6.0 pp |
+| 六类 Acc / Macro-F1 | 78.0% / 76.8% | **81.3% / 80.1%** | +3.3 / +3.3 pp |
+| 二分类 Acc / Macro-F1 | 91.3% / 91.3% | 91.3% / 91.3% | 不变 |
+| file-level 六类 | 62.0% / 52.8% | **74.0% / 62.5%** | +12.0 / +9.7 pp |
+
+- 收益集中在 General 类（F1 0.615 → 0.769）与 file-level 组；hunk-level 二分类退 4 pp（4 条翻转、3 条错）。
+- 六类一致率 130/150 = 86.7%，13 条 Stage-1 标签变化；二分类一条没变。
+- **注意**：规则是看着这批 150 条的错误写的（DEV-13），提升属样本内、偏乐观，引用时必须写明。
+- 完整数字、逐类表、错误分布见 `docs/rq2-results.md`；复算命令 `scripts/compare_runs.py`。
+
 ## v2-paper-2026-11（2026-11-02，刘思懿）· 论文附录原文
 
 **背景**：用户把 Zenodo 附录包下载到本机，原版 prompt 已从附录代码中取出并**逐字**落盘：

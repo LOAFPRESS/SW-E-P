@@ -37,6 +37,7 @@ from .llm import PriceTable, ResponseCache, build_llm_client
 from .logging_utils import JsonlWriter, setup_logger
 from .pipeline import AnnotationPipeline, run_fingerprint
 from .prompts import PromptSet
+from .providers import PROVIDERS
 from .schema import CSV_COLUMNS
 
 EXIT_OK = 0
@@ -46,12 +47,13 @@ EXIT_BUDGET = 3
 EXIT_PROVIDER = 4
 
 DEFAULT_COMMAND = "annotate"
-KNOWN_COMMANDS = ("annotate", "validate-data")
+KNOWN_COMMANDS = ("annotate", "validate-data", "rq3")
 
 EPILOG = """examples:
   python run.py validate-data -c config/config.yaml
   python run.py annotate -c config/config.yaml --limit 5 --write-report
   python run.py annotate -c config/config.yaml --provider openai
+  python run.py rq3 --ai-only
 """
 
 
@@ -68,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("-c", "--config", default="config/config.yaml", help="YAML configuration file")
     common.add_argument("--limit", type=int, default=None, help="annotate at most N comments")
-    common.add_argument("--provider", choices=["mock", "openai"], default=None, help="override llm.provider")
+    common.add_argument("--provider", choices=sorted(PROVIDERS), default=None, help="override llm.provider")
     common.add_argument("--output-dir", default=None, help="override output.dir")
     common.add_argument("--dataset", default=None, help="override data.path")
     common.add_argument("--no-cache", action="store_true", help="ignore the response cache")
@@ -85,6 +87,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("validate-data", parents=[common], help="load and describe the dataset, no LLM calls")
+
+    # RQ3 (Random Forest + SHAP) runs on the Zenodo feature matrix and needs no
+    # LLM configuration, so it gets its own argument set instead of ``common``.
+    # The options live in ``src/swep/rq3.py``; that module imports pandas, so it
+    # is imported lazily here and only the options are copied in.
+    from . import rq3 as rq3_module
+
+    rq3_parser = sub.add_parser("rq3", help="Random Forest + SHAP on the RQ3 feature matrix")
+    rq3_module.add_arguments(rq3_parser)
     return parser
 
 
@@ -318,6 +329,23 @@ def main(argv=None) -> int:
     command = args.command or DEFAULT_COMMAND
     if command == "validator":  # pragma: no cover - defensive
         command = "validate-data"
+
+    if command == "rq3":
+        # The RQ3 experiment needs no LLM configuration, so it runs before the
+        # config file is loaded (``run.py rq3`` works from a fresh checkout).
+        from . import rq3 as rq3_module
+
+        try:
+            return rq3_module.run(args)
+        except DataValidationError as exc:
+            print("rq3 error: %s" % exc, file=sys.stderr)
+            return EXIT_CONFIG
+        except KeyboardInterrupt:  # pragma: no cover - interactive only
+            print("interrupted", file=sys.stderr)
+            return EXIT_UNEXPECTED
+        except SwepError as exc:
+            print("rq3 error: %s" % exc, file=sys.stderr)
+            return EXIT_UNEXPECTED
 
     try:
         config = Config.load(args.config)

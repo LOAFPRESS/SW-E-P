@@ -13,6 +13,7 @@ the positive class means "the review was acted upon".
 
 import json
 import os
+import sys
 from typing import Dict, List, Optional, Sequence
 
 import numpy as np
@@ -228,3 +229,98 @@ def _render_markdown(payload: Dict[str, object]) -> str:
             lines.append("- %s: %s" % (key, ", ".join(values)))
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Command-line wrapper (exposed both as `python run.py rq3` and as
+# `python scripts/run_rq3.py`, so the project keeps a single entry point).
+# ---------------------------------------------------------------------------
+
+
+def repo_root() -> str:
+    """Absolute path of the repository root (``src/swep/rq3.py`` -> repo)."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def default_zenodo_root() -> str:
+    return os.path.join(os.path.dirname(repo_root()), "AIReviewActionAnalysis(Zenodo)", "address_feature_matrix")
+
+
+def add_arguments(parser) -> None:
+    """Register the RQ3 options on an existing parser (used by ``run.py rq3``)."""
+    parser.add_argument("--zenodo-root", default=default_zenodo_root(), help="address_feature_matrix directory of the Zenodo package")
+    parser.add_argument("--features", default=None, help="override the feature CSV path")
+    parser.add_argument("--labels", default=None, help="override the label CSV path")
+    parser.add_argument("--output", default=os.path.join(repo_root(), "artifacts", "rq3"), help="artefact directory")
+    parser.add_argument("--groups", default=None, help="comma separated feature groups (default: all)")
+    parser.add_argument("--ai-only", action="store_true", help="drop Human reviews (the paper's AI-only variant)")
+    parser.add_argument("--n-splits", type=int, default=5, help="number of CV folds (default: 5)")
+    parser.add_argument("--random-state", type=int, default=42, help="random seed (default: 42)")
+    parser.add_argument("--n-estimators", type=int, default=None, help="override the number of trees")
+    parser.add_argument("--action-binary", dest="action_binary", action="store_true", default=None, help="force binary action features")
+    parser.add_argument("--no-action-binary", dest="action_binary", action="store_false", help="force one-hot action features")
+    parser.add_argument("--no-shap", action="store_true", help="skip the SHAP analysis (CV metrics only)")
+    parser.add_argument("--no-plot", action="store_true", help="skip the PNG figures")
+
+
+def build_parser(prog: str = "run.py rq3"):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description="Stratified 5-fold Random Forest + SHAP on the RQ3 feature matrix.",
+    )
+    add_arguments(parser)
+    return parser
+
+
+def run(args) -> int:
+    """Execute the RQ3 experiment described by parsed *args*; returns an exit code."""
+    groups = [part.strip() for part in args.groups.split(",")] if args.groups else None
+
+    try:
+        frame, meta = load_rq3_frame(args.zenodo_root, features_path=args.features, labels_path=args.labels)
+    except FileNotFoundError as error:
+        print("rq3: %s" % error, file=sys.stderr)
+        print("hint: pass --zenodo-root <.../address_feature_matrix>, or --features/--labels explicitly", file=sys.stderr)
+        return 2
+
+    print("rows: %d (positive %d, %.2f%%)" % (meta["rows_after_merge"], meta["positive"], meta["positive_rate"] * 100))
+    if meta["unlabeled_rows_dropped"]:
+        print("dropped %d unlabeled row(s)" % meta["unlabeled_rows_dropped"])
+
+    report = run_experiment(
+        frame,
+        groups=groups,
+        action_binary=args.action_binary,
+        n_splits=args.n_splits,
+        random_state=args.random_state,
+        ai_only=args.ai_only,
+        explain=not args.no_shap,
+        n_estimators=args.n_estimators,
+    )
+
+    cv = report["cross_validation"]
+    print("analysed rows: %d (mode %s)" % (report["rows"], report["mode"]))
+    print(
+        "%d-fold: accuracy %.4f (+/- %.4f) | macro F1 %.4f (+/- %.4f) | %d features"
+        % (
+            cv["n_splits"],
+            cv["accuracy_mean"],
+            cv["accuracy_std"],
+            cv["macro_f1_mean"],
+            cv["macro_f1_std"],
+            cv["n_features"],
+        )
+    )
+    shap_info = report.get("shap") or {}
+    if shap_info.get("available"):
+        print("top SHAP features: %s" % ", ".join(shap_info["top_features"]))
+    elif shap_info:
+        print("SHAP unavailable: %s" % shap_info.get("error"))
+
+    written = write_report(report, args.output, dataset_meta=meta, plot=not args.no_plot)
+    for path in written:
+        print("wrote %s" % os.path.relpath(path, repo_root()))
+    return 0
+
