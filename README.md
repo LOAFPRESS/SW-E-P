@@ -1,7 +1,10 @@
-﻿# SW-E-P（Software Engineering Project）
+# SW-E-P（Software Engineering Project）
 
 > 软件工程项目 · 小组编号：8
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
+>
+> ![tests](https://github.com/LOAFPRESS/SW-E-P/actions/workflows/tests.yml/badge.svg)
+> 每次 push 在 Python 3.8 / 3.10 / 3.11 上跑一遍 326 个用例（`.github/workflows/tests.yml`），全部离线。
 
 ## 项目简介
 

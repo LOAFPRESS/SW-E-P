@@ -28,7 +28,10 @@
 | `4d680a3` | 灵敏度并入复现包（`label-sensitivity.json` + report 一节） |
 | `00909f2` | `docs/threats-to-validity.md`：19 条威胁与写法定稿 |
 | `ae72dbc` | Data availability：引 Zenodo DOI、不提交原始 CSV |
-| 本条提交 | `scripts/reproduce_all.py` 一键复现 + `docs/reproduction.md`（W7–W8 集成） |
+| `2d69f8a` | 本状态表刷新（提交表、威胁清单状态、复现入口） |
+| `7df57d9` | `tests/test_compare_runs.py`：A/B 脚本的四个视角与一致率有测试兜底（326 测试） |
+| `95a1067` | GitHub Actions：push 触发 `pytest`（3.8 / 3.10 / 3.11 三个矩阵） |
+| `c1c9d1a` | CI 修正：3.8 钉 `ubuntu-22.04`（24.04 的清单里没有 3.8） |
 
 ## 2. 计划书任务 vs 实际状态
 
@@ -68,6 +71,15 @@
 | 有效性威胁一节 | 初稿已由 B 写出（`docs/threats-to-validity.md`，T-01…T-19） | A 只需按自己的判断删改，不要从零写 |
 | 演示用 PPT / 最终打包 | 计划书未排周次 | 沿用 H1 的做法（脚本生成 docx/pptx + `final/` 打包） |
 | Zenodo 以外的外部效度讨论 | 需 A 的领域判断 | T-14…T-19 已列出可用的事实（4 个 action 占 98.9%、英文子集、单一时间窗、merged PR） |
+| CI 之外的质量门槛 | 只有 `pytest` 与入口冒烟 | 若要加，建议先加格式检查（`black --check`），别一次上太多 |
+
+## 4b. 持续集成
+
+`.github/workflows/tests.yml` 在每次 push 与 PR 上跑一遍全套用例（当前 326 个，全部离线：
+provider 是 mock，复现包读已提交的 `artifacts/`），矩阵是 Python **3.8 / 3.10 / 3.11**；
+3.8 钉在 `ubuntu-22.04`，因为 `ubuntu-24.04` 的 setup-python 清单里已经没有 3.8。
+末尾还有一条入口冒烟（`run.py --help` + `validate-data`），因为仓库大多数功能都从 `run.py` 进。
+2026-11-21 三个矩阵全绿。
 
 ## 5. 复现入口（一条命令起）
 
