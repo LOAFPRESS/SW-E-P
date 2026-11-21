@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """Reproduce every number the report quotes, in one run.
 
 Three modes, from cheapest to most expensive:
@@ -177,6 +177,15 @@ def step_rerun_llm():
     run(["run.py", "annotate", "-c", "config/config.deepseek-v21.yaml", "--write-report"])
 
 
+def step_sensitivity(json_path):
+    """Label sensitivity (DEV-12): two tiny random forests, a few seconds."""
+    run([
+        "scripts/rq3_label_sensitivity.py",
+        "--json", str(json_path),
+    ])
+    return json_load(json_path)
+
+
 def markdown(payload):
     lines = []
     add = lines.append
@@ -271,10 +280,34 @@ def markdown(payload):
     if claims.get("ai_only"):
         claim_table(claims["ai_only"], "AI only, Human removed")
 
+    sensitivity = payload.get("sensitivity") or {}
+    if sensitivity.get("runs"):
+        add("## RQ3 — label sensitivity (DEV-12)")
+        add("")
+        agree = sensitivity["agreement"]
+        add("%d comments are labelled by both us and the paper. The two binary label sets agree "
+            "on %.1f %% of them (Cohen's kappa %.3f)." % (
+                agree["n"], 100.0 * agree["agreement"], agree["kappa"]))
+        add("")
+        add("| Labels | Rows | Accuracy | Macro-F1 |")
+        add("| --- | --- | --- | --- |")
+        for result in sensitivity["runs"]:
+            add("| %s | %d | %.4f ± %.4f | %.4f ± %.4f |" % (
+                result["labels"], result["rows"], result["accuracy"], result["accuracy_std"],
+                result["macro_f1"], result["macro_f1_std"]))
+        add("")
+        for shift in sensitivity.get("rank_shifts") or []:
+            if shift.get("mean_shift") is None:
+                continue
+            add("- SHAP ranking, %s vs %s: mean absolute shift %.2f over %d shared features."
+                % (shift["first"], shift["second"], shift["mean_shift"], shift["n"]))
+        add("")
+
     add("## Where each number is explained")
     add("")
     add("- `docs/rq2-results.md` — the two annotation runs, per source, error analysis")
     add("- `docs/rq3-rf-shap.md` — protocol, comparison with the paper, SHAP tables")
+    add("- `docs/rq3-label-sensitivity.md` — what changes when the labels come from our run")
     add("- `docs/rq3-conclusions.md` — the four claims, with the Human confound")
     add("- `docs/paper-deviations.md` — DEV-01 … DEV-13, every difference from the paper")
     add("")
@@ -311,6 +344,9 @@ def main(argv=None):
     print("collecting RQ3 metrics ...")
     rq3_all_path, rq3_ai_path = step_rq3(args.recompute)
 
+    print("checking the label sensitivity ...")
+    sensitivity = step_sensitivity(OUT / "label-sensitivity.json")
+
     payload = {
         "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "commit": git_commit(),
@@ -327,6 +363,7 @@ def main(argv=None):
         "rq3_all": json_load(rq3_all_path),
         "rq3_ai": json_load(rq3_ai_path),
         "conclusions": conclusions,
+        "sensitivity": sensitivity,
         "artifacts": {
             "report": str(OUT / "report.md"),
             "manifest": str(OUT / "manifest.json"),
@@ -334,6 +371,7 @@ def main(argv=None):
             "rq3_ai": str(rq3_ai_path),
             "ab": str(OUT / "rq2-ab.json"),
             "conclusions": str(OUT / "conclusions.json"),
+            "label_sensitivity": str(OUT / "label-sensitivity.json"),
         },
     }
 

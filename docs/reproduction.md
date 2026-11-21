@@ -22,10 +22,11 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `report.md` | 可直接粘进报告的 Markdown：输入哈希、RQ2 四视角对照、分来源表、RQ3 指标与 SHAP 前十、四条结论的分组采纳率 |
+| `report.md` | 可直接粘进报告的 Markdown：输入哈希、RQ2 四视角对照、分来源表、RQ3 指标与 SHAP 前十、四条结论的分组采纳率、标签灵敏度 |
 | `manifest.json` | 同一批数字的机器可读版本，含 git commit、Python 与包版本、两个输入文件的 sha256 |
 | `rq2-ab.json` | `compare_runs.py` 的完整输出（两 run 的逐视角指标、一致率、标签转移表） |
 | `conclusions.json` | 四条结论的原始计数 |
+| `label-sensitivity.json` | 两套标签的一致率与 κ、两次 RF 指标、SHAP 名次移动 |
 
 `manifest.json` 里的 `commit` 与两个 sha256 是复现的锚点：只要这两条输入哈希不变，
 `report.md` 里的数字就应该逐字重现。
@@ -38,6 +39,7 @@
 | 论文 Table XI / XII | 随机森林 3,879 条 与 2,990 条 AI-only 的两个指标 | §RQ3 |
 | 论文 Table XI 的 SHAP 排序 | 全体与 AI-only 的 mean\|SHAP\| 前十 | §RQ3 |
 | 论文 Table XIII–XVI | 触发方式、代码片段、评论长度、粒度的采纳率（全体与 AI-only 两套） | §RQ3 四条结论 |
+| `docs/rq3-label-sensitivity.md` | 换标签后的一致率 92.7 %、κ 0.835、两次 RF 指标、SHAP 名次移动 3.78 | §RQ3 标签灵敏度 |
 | `docs/rq2-results.md` | 两个 prompt 的一致性 130/150 = 86.7 %、其中 13 条 Stage-1 改变 | §RQ2 |
 
 ## 4. 已知的边界
