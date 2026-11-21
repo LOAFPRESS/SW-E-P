@@ -36,6 +36,14 @@ STAGE1_LABELS = ["None", "General", "Valid"]
 STAGE2_LABELS = list(SIX_CLASS_LABELS[2:])
 BINARY_LABELS = ["Addressed", "Not-Addressed"]
 
+#: The label universe of each view, used when a view is scored with macro-F1.
+LABEL_SETS = {
+    "stage1": STAGE1_LABELS,
+    "stage2": STAGE2_LABELS,
+    "six_class": list(SIX_CLASS_LABELS),
+    "binary": BINARY_LABELS,
+}
+
 
 def stage1_of(label: Optional[str]) -> Optional[str]:
     if not label:
@@ -120,11 +128,13 @@ def fmt(value: float) -> str:
 
 
 def metrics_table(views: Dict[str, List[Tuple[str, str]]], label_sets: Dict[str, List[str]]) -> Dict[str, dict]:
-    return {
-        view: summarise(views[view], label_sets[view])
-        for view in ("stage1", "stage2", "six_class", "binary")
-        if views[view]
-    }
+    """Score every populated view; a missing key is treated as an empty view."""
+    table: Dict[str, dict] = {}
+    for view in ("stage1", "stage2", "six_class", "binary"):
+        pairs = views.get(view) or []
+        if pairs:
+            table[view] = summarise(pairs, label_sets[view])
+    return table
 
 
 def agreement(rows_a: Dict[str, dict], rows_b: Dict[str, dict]) -> dict:
@@ -178,12 +188,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows_a = read_run(args.run_a)
     rows_b = read_run(args.run_b)
     gold = read_gold(args.gold)
-    label_sets = {
-        "stage1": STAGE1_LABELS,
-        "stage2": STAGE2_LABELS,
-        "six_class": list(SIX_CLASS_LABELS),
-        "binary": BINARY_LABELS,
-    }
+    label_sets = LABEL_SETS
 
     metrics = {
         name_a: metrics_table(view_pairs(rows_a, gold), label_sets),
