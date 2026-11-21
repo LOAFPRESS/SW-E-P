@@ -1,4 +1,4 @@
-# SW-E-P（Software Engineering Project）
+﻿# SW-E-P（Software Engineering Project）
 
 > 软件工程项目 · 小组编号：8
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
@@ -174,8 +174,8 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 报告里出现的每个数字都能用一条命令重新生成，不必记五份文档的位置：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\reproduce_all.py              # 读已有产物，约 15 s，不花钱
-.\.venv\Scripts\python.exe scripts\reproduce_all.py --recompute  # 再重训 RF + SHAP，1–3 min
+.\.venv\Scripts\python.exe run.py reproduce              # 读已有产物，约 15 s，不花钱
+.\.venv\Scripts\python.exe run.py reproduce --recompute  # 再重训 RF + SHAP，1–3 min
 ```
 
 产物是 `artifacts/reproduction/report.md`（可直接粘进报告）与 `manifest.json`（git commit、
@@ -186,5 +186,6 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 
 计划书 8 周任务、仓库里实际有的东西、还空着的活：**[docs/project-status.md](docs/project-status.md)**。
 当前状态：W1–W6 的代码与结果均在仓库内，W7–W8 的报告正文仍待组长牵头。
+
 
 

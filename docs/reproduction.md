@@ -7,9 +7,12 @@
 
 | 命令 | 做什么 | 花钱 | 用时 |
 | --- | --- | --- | --- |
-| `run.py` 不动，直接 `python scripts/reproduce_all.py` | 复用 `artifacts/` 里已有的标注结果与 RQ3 结果，重跑四个确定性的、几十秒的步骤，重新生成 `report.md` / `manifest.json` | 0 | ~15 s |
-| `... --recompute` | 上面全部 + 重训随机森林（RQ3 全部 3,879 条 与 AI-only 2,990 条，含 SHAP） | 0 | 1–3 min |
-| `... --rerun-llm` | 上面全部 + 重跑两个 prompt 的 150 条标注批次（`config/config.deepseek.yaml`、`config.deepseek-v21.yaml`） | ~$0.6 | ~40 min |
+| `run.py reproduce` | 复用 `artifacts/` 里已有的标注结果与 RQ3 结果，重跑四个确定性的、几十秒的步骤，重新生成 `report.md` / `manifest.json` | 0 | ~15 s |
+| `run.py reproduce --recompute` | 上面全部 + 重训随机森林（RQ3 全部 3,879 条 与 AI-only 2,990 条，含 SHAP） | 0 | 1–3 min |
+| `run.py reproduce --rerun-llm` | 上面全部 + 重跑两个 prompt 的 150 条标注批次（`config/config.deepseek.yaml`、`config/config.deepseek-v21.yaml`） | ~$0.6 | ~40 min |
+
+底层实现是 `scripts/reproduce_all.py`；`run.py reproduce` 只是转发这三个开关，
+两种写法等价。
 
 `--rerun-llm` 需要 `DEEPSEEK_API_KEY`；前两种模式不联网，适合在答辩机上现场演示。
 
@@ -55,3 +58,4 @@
 2. 在 `scripts/reproduce_all.py` 里加一个 `step_*()`，只读那个 JSON；
 3. 在 `markdown()` 里加一节，并给 `tests/test_reproduce.py` 的 `_payload()` 补上对应键——
    那三个测试的作用就是防止某个键的形状变化把整份报告打崩。
+

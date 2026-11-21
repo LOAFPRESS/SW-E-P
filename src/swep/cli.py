@@ -1,4 +1,4 @@
-"""Command-line interface for the annotation module.
+﻿"""Command-line interface for the annotation module.
 
 Usage::
 
@@ -18,6 +18,7 @@ Exit codes (documented for the integration with ``run.py`` of the whole project)
 
 import argparse
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -47,7 +48,7 @@ EXIT_BUDGET = 3
 EXIT_PROVIDER = 4
 
 DEFAULT_COMMAND = "annotate"
-KNOWN_COMMANDS = ("annotate", "validate-data", "rq3")
+KNOWN_COMMANDS = ("annotate", "validate-data", "rq3", "reproduce")
 
 EPILOG = """examples:
   python run.py validate-data -c config/config.yaml
@@ -96,6 +97,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     rq3_parser = sub.add_parser("rq3", help="Random Forest + SHAP on the RQ3 feature matrix")
     rq3_module.add_arguments(rq3_parser)
+
+    # ``reproduce`` regenerates every number the report quotes. The work lives in
+    # ``scripts/reproduce_all.py`` because it orchestrates the other entry points
+    # as child processes; here it only needs the three flags.
+    reproduce = sub.add_parser(
+        "reproduce", help="regenerate every number the report quotes")
+    reproduce.add_argument("--recompute", action="store_true",
+                           help="retrain the random forest instead of reading its JSON")
+    reproduce.add_argument("--rerun-llm", action="store_true",
+                           help="rerun both annotation batches (needs an API key)")
     return parser
 
 
@@ -142,6 +153,25 @@ def _cmd_validate_data(config: Config, args) -> int:
     print("with gold label: %d" % stats["with_gold_label"])
     print("synthetic rows: %d" % stats["synthetic"])
     return EXIT_OK
+
+
+def _cmd_reproduce(args) -> int:
+    """Delegate to ``scripts/reproduce_all.py`` (it orchestrates the other steps)."""
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "reproduce_all.py"
+    if not script.exists():
+        print("reproduce error: %s is missing" % script, file=sys.stderr)
+        return EXIT_CONFIG
+    command = [sys.executable, str(script)]
+    if getattr(args, "recompute", False):
+        command.append("--recompute")
+    if getattr(args, "rerun_llm", False):
+        command.append("--rerun-llm")
+    try:
+        return subprocess.call(command, cwd=str(repo_root))
+    except KeyboardInterrupt:  # pragma: no cover - interactive only
+        print("interrupted", file=sys.stderr)
+        return EXIT_UNEXPECTED
 
 
 def _cmd_annotate(config: Config, args) -> int:
@@ -347,6 +377,11 @@ def main(argv=None) -> int:
             print("rq3 error: %s" % exc, file=sys.stderr)
             return EXIT_UNEXPECTED
 
+    if command == "reproduce":
+        # Same argument as rq3: no configuration file is needed, because the
+        # bundle reads the configuration of each step from the artefacts.
+        return _cmd_reproduce(args)
+
     try:
         config = Config.load(args.config)
     except ConfigError as exc:
@@ -375,3 +410,4 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
+

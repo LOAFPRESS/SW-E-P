@@ -1,4 +1,4 @@
-"""CLI-level tests: exit codes, artifacts and overrides."""
+﻿"""CLI-level tests: exit codes, artifacts and overrides."""
 
 import csv
 from pathlib import Path
@@ -115,6 +115,16 @@ class TestParser:
         assert args.command == "rq3"
         assert args.ai_only is True
 
+    def test_reproduce_subcommand_is_registered(self):
+        parser = cli.build_parser()
+        args = parser.parse_args(["reproduce"])
+        assert args.command == "reproduce"
+        assert args.recompute is False
+        assert args.rerun_llm is False
+        args = parser.parse_args(["reproduce", "--recompute", "--rerun-llm"])
+        assert args.recompute is True
+        assert args.rerun_llm is True
+
 
 ZENODO_MATRIX = Path(cli.__file__).resolve().parents[2].parent / "AIReviewActionAnalysis(Zenodo)" / "address_feature_matrix"
 
@@ -144,3 +154,4 @@ class TestRq3Command:
         code = cli.main(["rq3", "--zenodo-root", str(tmp_path / "nope"), "--output", str(tmp_path / "out")])
         assert code == cli.EXIT_CONFIG
         assert "rq3" in capsys.readouterr().err
+
