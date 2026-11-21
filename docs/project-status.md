@@ -1,4 +1,4 @@
-# 项目进度与交接（2026-11-09 核对）
+# 项目进度与交接（2026-11-21 核对）
 
 > 用途：把计划书的 8 周任务、仓库里实际存在的东西、还没人认领的空白放在一张表里，
 > 让组里其他成员（或下一次接手的自己）能直接看出"现在在哪、下一步做什么"。
@@ -22,6 +22,12 @@
 | `a73c461` | 修 openai 1.55.3 不认识 `reasoning_effort`（改走 `extra_body`） |
 | `f8a6e4b` | prompt v2.1 A/B、`run.py rq3` 单一入口、四条结论核对、本状态表 |
 | `24edf6c` | 测试数刷新到 295 |
+| `edd3709` | 一键复现：`scripts/reproduce_all.py` 产出 `artifacts/reproduction/report.md` |
+| `66521ed` | `run.py reproduce` / `--recompute` / `--rerun-llm`（单一入口收口） |
+| `15188c2` | 标签灵敏度（DEV-12）：110 条重叠样本、κ 0.835、SHAP 名次移动 3.78 |
+| `4d680a3` | 灵敏度并入复现包（`label-sensitivity.json` + report 一节） |
+| `00909f2` | `docs/threats-to-validity.md`：19 条威胁与写法定稿 |
+| `ae72dbc` | Data availability：引 Zenodo DOI、不提交原始 CSV |
 | 本条提交 | `scripts/reproduce_all.py` 一键复现 + `docs/reproduction.md`（W7–W8 集成） |
 
 ## 2. 计划书任务 vs 实际状态
@@ -58,9 +64,10 @@
 | --- | --- | --- |
 | RQ2 `--repeat 5` 稳定性实验 | 需真实 key，成本约 $1.2 / 75 min（DEV-04） | 有 key 时由 B 跑，结果并入 `docs/rq2-results.md` |
 | v2.1 的 held-out 复核 | 四条规则是样本内调的（DEV-13） | 按来源分层留 30 条不参与调参，只测一次；$0.06 / 4 min |
-| 报告正文（RQ1/RQ2/RQ3 三节 + 有效性威胁） | 属 A 的 W7–W8 | A 可直接引用 `docs/` 下六份分析文档，不必重跑 |
+| 报告正文（RQ1/RQ2/RQ3 三节） | 属 A 的 W7–W8 | 可直接引用 `docs/` 下七份分析文档，不必重跑 |
+| 有效性威胁一节 | 初稿已由 B 写出（`docs/threats-to-validity.md`，T-01…T-19） | A 只需按自己的判断删改，不要从零写 |
 | 演示用 PPT / 最终打包 | 计划书未排周次 | 沿用 H1 的做法（脚本生成 docx/pptx + `final/` 打包） |
-| Zenodo 以外的外部效度讨论 | 需 A 的领域判断 | 建议单列一节：3 个 action 家族、2 种语言、单一时间窗 |
+| Zenodo 以外的外部效度讨论 | 需 A 的领域判断 | T-14…T-19 已列出可用的事实（4 个 action 占 98.9%、英文子集、单一时间窗、merged PR） |
 
 ## 5. 复现入口（一条命令起）
 
@@ -85,6 +92,12 @@ python -m venv .venv
 .\.venv\Scripts\python.exe run.py rq3
 .\.venv\Scripts\python.exe run.py rq3 --ai-only
 .\.venv\Scripts\python.exe scripts\rq3_conclusions.py
+
+# 标签灵敏度（不需要 key，约 1 分钟）
+.\.venv\Scripts\python.exe scripts\rq3_label_sensitivity.py --json artifacts\rq3-sensitivity\metrics.json
+
+# 把上面所有数字装进一个包（不需要 key，约 15 s）
+.\.venv\Scripts\python.exe run.py reproduce
 ```
 
 ## 6. 交接时的三个提醒
