@@ -20,7 +20,9 @@
 | `af52cb7` | RQ3 复现（W5–W6）：`features/rf/explain/rq3`、`scripts/run_rq3.py`、295 测试 |
 | `c6e89bb` | RQ2 首次真实跑批结果（`docs/rq2-results.md`） |
 | `a73c461` | 修 openai 1.55.3 不认识 `reasoning_effort`（改走 `extra_body`） |
-| 本条提交 | prompt v2.1 A/B、`run.py rq3` 单一入口、四条结论核对、本状态表 |
+| `f8a6e4b` | prompt v2.1 A/B、`run.py rq3` 单一入口、四条结论核对、本状态表 |
+| `24edf6c` | 测试数刷新到 295 |
+| 本条提交 | `scripts/reproduce_all.py` 一键复现 + `docs/reproduction.md`（W7–W8 集成） |
 
 ## 2. 计划书任务 vs 实际状态
 
@@ -29,7 +31,7 @@
 | W1–W2 | 精读、Zenodo 数据核对、搭环境 | A（B/C 配合） | ✅ Zenodo 包已落地并核验（`data/README.md`、DEV-07 关闭）；`.venv` 已建 |
 | W3–W4 | 两阶段 LLM 标注流水线 + gold 子集批量推理 | **B（刘思懿）** | ✅ 完成，含 150 条真实跑批 + prompt v2.1 A/B（`docs/rq2-results.md`） |
 | W5–W6 | 特征子集 + 分层 5 折 RF + SHAP | C（杨弋驰） | ✅ 代码与结果在 `docs/rq3-rf-shap.md`（由 B 补位实现，C 可直接接手写正文） |
-| W7–W8 | 集成、端到端、复现原结论、偏差与有效性威胁 | A（尹捷睿）牵头 | 🟡 本文件 + `docs/rq3-conclusions.md` + `run.py rq3` 是补位部分；报告正文仍待 A |
+| W7–W8 | 集成、端到端、复现原结论、偏差与有效性威胁 | A（尹捷睿）牵头 | 🟡 端到端已闭环（`scripts/reproduce_all.py` 一条命令产出 `artifacts/reproduction/report.md`）；剩下的是报告正文与外部效度，仍待 A |
 
 ## 3. 这一轮补了什么（给队友的接口）
 
@@ -39,7 +41,11 @@
 2. **"复现原结论"的数据**：`docs/rq3-conclusions.md` + `scripts/rq3_conclusions.py`，
    把论文四条实践结论在 3879 条建模集上逐条算了采纳率，并给出 Human 混淆的解释。
    这直接就是 W7–W8 报告里"RQ3 结论"一节可以引用的素材。
-3. **状态表**：本文件。计划书里的"谁在第几周做什么"与仓库现状对齐，避免重复劳动。
+3. **端到端复现**：`scripts/reproduce_all.py` 把数据集自检、两次标注与论文的对照、
+   prompt A/B、四条结论核对、RQ3 指标与 SHAP 收进一个出口，写 `artifacts/reproduction/report.md`
+   与 `manifest.json`（含 git commit 与两个输入文件的 sha256）。默认模式不花钱、15 秒；
+   `--recompute` 会重训 RF；`--rerun-llm` 才会调用模型。用法见 `docs/reproduction.md`。
+4. **状态表**：本文件。计划书里的"谁在第几周做什么"与仓库现状对齐，避免重复劳动。
 
 ## 4. 还空着的（建议认领）
 
@@ -83,3 +89,4 @@ python -m venv .venv
    `deepseek-chat` / `deepseek-reasoner` 已下线。思考模式下 `temperature` 无效（DEV-09）。
 3. **一切偏差都登记在 `docs/paper-deviations.md`（DEV-01…DEV-13）**：写报告时逐条对照，
    不要凭印象说"和论文一致"。
+

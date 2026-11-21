@@ -34,3 +34,6 @@ run.log
 .env
 .env.*
 *.key
+
+# Task 3 tooling: the PlantUML jar is a 21 MB binary, download it again if needed
+task3-tools/

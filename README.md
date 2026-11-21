@@ -1,4 +1,4 @@
-﻿# SW-E-P（Software Engineering Project）
+# SW-E-P（Software Engineering Project）
 
 > 软件工程项目 · 小组编号：8
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
@@ -55,17 +55,19 @@ SW-E-P/
 │   └── llm/                       # mock / OpenAI 兼容客户端、解析、重试、缓存、计价
 ├── scripts/
 │   ├── build_gold_dataset.py      # 从本机 Zenodo 目录重建 data/gold150.jsonl
-│   └── run_rq3.py                 # RQ3 入口：分层 5 折 RF + SHAP（--ai-only 对照）
+│   ├── reproduce_all.py           # 一条命令复现报告里的全部数字
+│   ├── run_rq3.py                 # RQ3 入口：分层 5 折 RF + SHAP（--ai-only 对照）
 ├── data/
 │   ├── README.md                  # 数据来源、构建规则、字段契约、别名表
 │   ├── gold150.jsonl              # 150 条真实 gold（+ .provenance.json）
 │   └── samples/sample_comments.jsonl  # 12 条合成样例（synthetic: true）
-├── tests/                         # 295 个 pytest 用例
+├── tests/                         # 298 个 pytest 用例
 ├── docs/
 │   ├── annotation-pipeline.md     # 标注模块设计说明（架构/配置/用法/产物）
 │   ├── annotation-csv-schema.md   # annotations.csv 21 列数据契约
 │   ├── rq3-rf-shap.md             # RQ3 复现协议、结果对照与交接说明
-│   └── paper-deviations.md        # 与论文的偏差登记（DEV-01 ~ DEV-12）
+│   ├── reproduction.md            # reproduce_all.py 的三种模式与产物
+│   └── paper-deviations.md        # 与论文的偏差登记（DEV-01 ~ DEV-13）
 └── artifacts/                     # 运行产物（gitignore，可重建）
 ```
 
@@ -167,8 +169,22 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 - 论文四条实践结论的逐条核对：[docs/rq3-conclusions.md](docs/rq3-conclusions.md)
 - 特征可用性（缺 10 列）与"未用我们重跑标签"两条偏差：DEV-11 / DEV-12（见 docs/paper-deviations.md）
 
+## 一键复现（W7–W8 集成）
+
+报告里出现的每个数字都能用一条命令重新生成，不必记五份文档的位置：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\reproduce_all.py              # 读已有产物，约 15 s，不花钱
+.\.venv\Scripts\python.exe scripts\reproduce_all.py --recompute  # 再重训 RF + SHAP，1–3 min
+```
+
+产物是 `artifacts/reproduction/report.md`（可直接粘进报告）与 `manifest.json`（git commit、
+包版本、两个输入文件的 sha256，加上同一批数字）。三种模式、覆盖哪些表、已知边界见
+[docs/reproduction.md](docs/reproduction.md)。
+
 ## 项目进度与交接
 
 计划书 8 周任务、仓库里实际有的东西、还空着的活：**[docs/project-status.md](docs/project-status.md)**。
 当前状态：W1–W6 的代码与结果均在仓库内，W7–W8 的报告正文仍待组长牵头。
+
 
