@@ -33,7 +33,7 @@ SW-E-P/
 ├── README.md                      # 项目介绍（本文件）
 ├── proposal.md                    # 项目提案（Task1，Markdown 版）
 ├── Task1-Project Proposal-Final.docx  # 项目提案（Word 版，含格式模板）
-├── run.py                         # 唯一入口（annotate / validate-data）
+├── run.py                         # 唯一入口（annotate / validate-data / rq3 / reproduce）
 ├── requirements.txt               # 运行依赖（标注流水线 + RQ3 建模）
 ├── config/
 │   ├── config.yaml                # 默认配置（mock provider，离线可跑）
@@ -195,6 +195,32 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 19 条威胁（T-01…T-19）分四类，每条都带我们手上的证据、已经做的处理、以及"报告里该怎么写 /
 不要声称什么"。和 `docs/paper-deviations.md` 的分工是：偏差记"我们和论文哪里不同"，
 威胁记"这些不同会让结论错在哪里"。
+
+## 数据来源与引用（Data availability）
+
+本项目**不做新的数据收集**：语料、150 条人工标注、RQ3 特征矩阵与标签、原版 prompt 与
+研究脚本全部来自论文的 Zenodo 附录，本仓库只提交派生结果（`data/gold150.jsonl`、
+`artifacts/` 下的标注与指标）。
+
+原始数据：Sun K., Kuang H., Zhou X., Zhang H., Ma X., Rong G., Baltes S., Treude C.
+*Replication package for "Does AI Code Review Lead to Code Changes? A Case Study of
+GitHub Actions"*. Zenodo, 2026. <https://doi.org/10.5281/zenodo.19562450>
+
+报告里可直接用的三句：
+
+> The replication package of the original study was used as the sole data source; no new
+> data were collected. The corpus, the 150 human-labelled comments, the feature matrix and
+> the original prompts are distributed with the paper's Zenodo appendix
+> (DOI 10.5281/zenodo.19562450). All numbers in this report were produced from that package
+> by the code in this repository.
+
+两点注意：
+
+- 附录 README 自己写明示例评论取自 `PathfinderHonorManagerUI`、`AlarmClock`、`aeon_mecha`
+  等公开仓库的 PR —— 引用时**引 Zenodo DOI**，不要直接再分发 254 MB 原始 CSV
+  （`.gitignore` 已排除 `data/raw/`），也不要把 GitHub 上的评论当成本项目的数据。
+- 附录包本身没有附 license 文件（只在 Zenodo 记录页声明），所以仓库里只放派生结果，
+  不放原始数据副本。
 
 
 
