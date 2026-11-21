@@ -1,4 +1,4 @@
-﻿# SW-E-P（Software Engineering Project）
+# SW-E-P（Software Engineering Project）
 
 > 软件工程项目 · 小组编号：8
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
@@ -93,7 +93,7 @@ setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会�
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache  # 3 条试跑
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report       # 150 条正式跑
 
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 295 passed
+.\.venv\Scripts\python.exe -m pytest tests -q                           # 311 passed
 ```
 
 `config/config.deepseek.yaml` 用的是 DeepSeek 2026-11 的模型名：`deepseek-flash`
@@ -167,6 +167,8 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 
 - 协议逐条对齐、SHAP 结果表、交接给杨弋驰的说明：[docs/rq3-rf-shap.md](docs/rq3-rf-shap.md)
 - 论文四条实践结论的逐条核对：[docs/rq3-conclusions.md](docs/rq3-conclusions.md)
+- **换成我们自己的标签，RF 与 SHAP 还稳吗**：[docs/rq3-label-sensitivity.md](docs/rq3-label-sensitivity.md)
+  （110 条重叠样本：标签一致率 92.7%、κ 0.835、SHAP 排序平均移动 3.78 位）
 - 特征可用性（缺 10 列）与"未用我们重跑标签"两条偏差：DEV-11 / DEV-12（见 docs/paper-deviations.md）
 
 ## 一键复现（W7–W8 集成）
