@@ -189,5 +189,12 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 计划书 8 周任务、仓库里实际有的东西、还空着的活：**[docs/project-status.md](docs/project-status.md)**。
 当前状态：W1–W6 的代码与结果均在仓库内，W7–W8 的报告正文仍待组长牵头。
 
+## 有效性威胁
+
+写报告最后一节时直接引 **[docs/threats-to-validity.md](docs/threats-to-validity.md)**：
+19 条威胁（T-01…T-19）分四类，每条都带我们手上的证据、已经做的处理、以及"报告里该怎么写 /
+不要声称什么"。和 `docs/paper-deviations.md` 的分工是：偏差记"我们和论文哪里不同"，
+威胁记"这些不同会让结论错在哪里"。
+
 
 
