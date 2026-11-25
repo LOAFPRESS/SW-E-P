@@ -1,14 +1,13 @@
-# 项目进度与交接（2026-11-21 核对）
+# 项目进度与交接（2026-11-25 核对）
 
 > 用途：把计划书的 8 周任务、仓库里实际存在的东西、还没人认领的空白放在一张表里，
 > 让组里其他成员（或下一次接手的自己）能直接看出"现在在哪、下一步做什么"。
-> 核对方式：`git fetch --all --prune` + `git branch -a` + 本地 `P1/` 目录时间戳。
+> 核对依据包括远端分支、GitHub Actions、本地 Git 历史和 `P1/` 中的作业材料。
 
-## 1. 仓库现状（截至本条提交）
+## 1. 仓库现状（截至远端 `44b3425`）
 
-- 远端：`origin https://github.com/LOAFPRESS/SW-E-P.git`，只有一个分支 `main`。
-- 提交历史里**只有刘思懿的提交**（`3ead5c3` 起 7 个），队友尚未推送任何分支或代码。
-- 因此"补位"只能落在**接口与空白文档**上，不能替别人写他们该负责的分析结论。
+- GitHub 远端目前只有 `main`，没有开放的 PR。
+- 下表记录了标注、建模和集成的主要提交。小组分工与交接状态见下一节。
 
 | 提交 | 内容 |
 | --- | --- |
@@ -52,9 +51,8 @@
    这直接就是 W7–W8 报告里"RQ3 结论"一节可以引用的素材。
 3. **端到端复现**：`scripts/reproduce_all.py` 把数据集自检、两次标注与论文的对照、
    prompt A/B、四条结论核对、RQ3 指标与 SHAP 收进一个出口，写 `artifacts/reproduction/report.md`
-   与 `manifest.json`（含 git commit 与两个输入文件的 sha256）。默认模式不花钱、15 秒；
-   `--recompute` 会重训 RF；`--rerun-llm` 才会调用模型。用法见 `docs/reproduction.md`。
-   入口也已接成 `run.py reproduce`（`--recompute` / `--rerun-llm` 同义），单一入口的承诺到此为止。
+   与 `manifest.json`（含 Git commit、gold 数据和特征矩阵的 SHA-256）。入口为 `run.py reproduce`。
+   `--recompute` 会重训 RF，`--rerun-llm` 会运行两套 DeepSeek 标注配置。用法见 `docs/reproduction.md`。
 4. **标签灵敏度（DEV-12 的正面证据）**：`scripts/rq3_label_sensitivity.py` 在"我们标过、论文也标过"
    的 110 条上比较两套标签 —— 一致率 92.7%、κ 0.835；换标签重训 RF 为 0.7909 / 0.7364
    （论文标签 0.7273 / 0.6716，n=110，差距小于一个标准差）；SHAP 排序平均移动 3.78 位。
@@ -75,11 +73,15 @@
 
 ## 4b. 持续集成
 
-`.github/workflows/tests.yml` 在每次 push 与 PR 上跑一遍全套用例（当前 326 个，全部离线：
-provider 是 mock，复现包读已提交的 `artifacts/`），矩阵是 Python **3.8 / 3.10 / 3.11**；
+`.github/workflows/tests.yml` 在推送到 `main` 或创建 PR 时运行离线测试。测试使用 mock provider 和测试构造的复现输入。
+矩阵是 Python **3.8 / 3.10 / 3.11**。
 3.8 钉在 `ubuntu-22.04`，因为 `ubuntu-24.04` 的 setup-python 清单里已经没有 3.8。
 末尾还有一条入口冒烟（`run.py --help` + `validate-data`），因为仓库大多数功能都从 `run.py` 进。
 2026-11-21 三个矩阵全绿。
+
+2026-11-25 核对公开仓库，`main` 与本地的 `44b3425` 一致，最近一次 [Actions 运行](https://github.com/LOAFPRESS/SW-E-P/actions/runs/44897509425) 成功。
+Git 忽略 `artifacts/`。新克隆需要先准备 Zenodo 附录和历史产物，或按[复现说明](reproduction.md)重新生成产物。
+本地加入了缺失输入检查，328 个测试通过。用干净副本、Zenodo 数据和两份历史标注运行 `--recompute` 后，全量和 AI-only 的样本数、准确率与 Macro-F1 均与历史结果一致。
 
 ## 5. 复现入口（一条命令起）
 
@@ -108,7 +110,7 @@ python -m venv .venv
 # 标签灵敏度（不需要 key，约 1 分钟）
 .\.venv\Scripts\python.exe scripts\rq3_label_sensitivity.py --json artifacts\rq3-sensitivity\metrics.json
 
-# 把上面所有数字装进一个包（不需要 key，约 15 s）
+# 用已有标注和 RQ3 指标生成复现报告（不需要 key）
 .\.venv\Scripts\python.exe run.py reproduce
 ```
 

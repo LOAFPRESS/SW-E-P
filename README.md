@@ -4,7 +4,7 @@
 > 项目网站：https://github.com/LOAFPRESS/SW-E-P
 >
 > ![tests](https://github.com/LOAFPRESS/SW-E-P/actions/workflows/tests.yml/badge.svg)
-> 每次 push 在 Python 3.8 / 3.10 / 3.11 上跑一遍 326 个用例（`.github/workflows/tests.yml`），全部离线。
+> 推送到 `main` 或提交 PR 时，在 Python 3.8 / 3.10 / 3.11 上运行离线测试（`.github/workflows/tests.yml`）。
 
 ## 项目简介
 
@@ -64,7 +64,7 @@ SW-E-P/
 │   ├── README.md                  # 数据来源、构建规则、字段契约、别名表
 │   ├── gold150.jsonl              # 150 条真实 gold（+ .provenance.json）
 │   └── samples/sample_comments.jsonl  # 12 条合成样例（synthetic: true）
-├── tests/                         # 326 个 pytest 用例
+├── tests/                         # 离线 pytest 用例
 ├── docs/
 │   ├── annotation-pipeline.md     # 标注模块设计说明（架构/配置/用法/产物）
 │   ├── annotation-csv-schema.md   # annotations.csv 21 列数据契约
@@ -96,7 +96,7 @@ setx DEEPSEEK_API_KEY "sk-..."     # 执行一次后重开终端；或当前会�
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --limit 3 --no-cache  # 3 条试跑
 .\.venv\Scripts\python.exe run.py annotate -c config/config.deepseek.yaml --write-report       # 150 条正式跑
 
-.\.venv\Scripts\python.exe -m pytest tests -q                           # 326 passed
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 `config/config.deepseek.yaml` 用的是 DeepSeek 2026-11 的模型名：`deepseek-flash`
@@ -176,10 +176,10 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 
 ## 一键复现（W7–W8 集成）
 
-报告里出现的每个数字都能用一条命令重新生成，不必记五份文档的位置：
+复现入口汇总 RQ2 与 RQ3 的结果。首次克隆后，请先按[复现说明](docs/reproduction.md)准备 Zenodo 附录和历史标注文件。
 
 ```powershell
-.\.venv\Scripts\python.exe run.py reproduce              # 读已有产物，约 15 s，不花钱
+.\.venv\Scripts\python.exe run.py reproduce              # 复用已有标注和 RQ3 指标，无 API 调用
 .\.venv\Scripts\python.exe run.py reproduce --recompute  # 再重训 RF + SHAP，1–3 min
 ```
 
@@ -201,9 +201,8 @@ None/General/Valid-Unaddressed 的档位边界、以 file-level 为主；v2.1 �
 
 ## 数据来源与引用（Data availability）
 
-本项目**不做新的数据收集**：语料、150 条人工标注、RQ3 特征矩阵与标签、原版 prompt 与
-研究脚本全部来自论文的 Zenodo 附录，本仓库只提交派生结果（`data/gold150.jsonl`、
-`artifacts/` 下的标注与指标）。
+语料、150 条人工标注、RQ3 特征矩阵与标签、原版 prompt 和论文的研究脚本来自 Zenodo 附录。
+Git 仓库提供派生的 `data/gold150.jsonl`、复现代码和结果说明。实际跑批的标注 CSV 和指标保存在本地 `artifacts/`。
 
 原始数据：Sun K., Kuang H., Zhou X., Zhang H., Ma X., Rong G., Baltes S., Treude C.
 *Replication package for "Does AI Code Review Lead to Code Changes? A Case Study of

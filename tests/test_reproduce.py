@@ -1,11 +1,4 @@
-﻿"""Tests for scripts/reproduce_all.py — the Markdown renderer only.
-
-The script itself is an orchestrator: its value is that it runs the same commands
-a reader would run by hand. What is worth testing is the part that has to cope
-with the shapes of the artefacts (a list of buckets here, a dict keyed by group
-there), because a wrong shape used to crash the whole bundle after twenty
-minutes of work.
-"""
+﻿"""Offline tests for reproduction input checks and the Markdown renderer."""
 
 import importlib.util
 from pathlib import Path
@@ -101,3 +94,30 @@ def test_markdown_survives_missing_optional_blocks(module):
     assert "AI only" in text
     assert "AI only, Human removed" not in text
 
+
+@pytest.mark.parametrize("flags", [[], ["--recompute", "--rerun-llm"]])
+def test_missing_reproduction_inputs(module, tmp_path, monkeypatch, capsys, flags):
+    monkeypatch.setattr(module, "GOLD", tmp_path / "gold150.jsonl")
+    module.GOLD.touch()
+    monkeypatch.setattr(module, "FEATURES", tmp_path / "features.csv")
+    monkeypatch.setattr(module, "LABELS", tmp_path / "labels.csv")
+    monkeypatch.setattr(module, "RUN_V2", tmp_path / "deepseek-paper")
+    monkeypatch.setattr(module, "RUN_V21", tmp_path / "deepseek-v21")
+    monkeypatch.setattr(module, "RQ3_ALL", tmp_path / "all_reviews")
+    monkeypatch.setattr(module, "RQ3_AI", tmp_path / "ai_only")
+    monkeypatch.setattr(module, "OUT", tmp_path / "reproduction")
+
+    with pytest.raises(SystemExit) as error:
+        module.main(flags)
+
+    assert error.value.code == 2
+    stderr = capsys.readouterr().err
+    assert str(module.FEATURES) in stderr
+    assert str(module.LABELS) in stderr
+    assert str(module.GOLD) not in stderr
+    for run_dir in (module.RUN_V2, module.RUN_V21):
+        assert (str(run_dir / "annotations.csv") in stderr) == ("--rerun-llm" not in flags)
+    for run_dir in (module.RQ3_ALL, module.RQ3_AI):
+        assert (str(run_dir / "rq3_metrics.json") in stderr) == ("--recompute" not in flags)
+    assert "docs/reproduction.md" in stderr
+    assert not module.OUT.exists()

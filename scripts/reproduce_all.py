@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """Reproduce every number the report quotes, in one run.
 
-Three modes, from cheapest to most expensive:
+Run the bundle with either or both optional steps:
 
     python scripts/reproduce_all.py                # assemble from existing artefacts
     python scripts/reproduce_all.py --recompute    # + rerun the random forest (minutes)
     python scripts/reproduce_all.py --rerun-llm    # + rerun both annotation batches (money)
 
-The default mode only reads what is already in ``artifacts/``: it re-runs the
-deterministic, sub-minute steps (dataset validation, the paper comparison, the
-prompt A/B comparison, the four-claims check) and copies the numbers of the
-expensive steps (the two LLM batches, RQ3) from their JSON files. Nothing is
-sent to a provider, so the default mode and ``--recompute`` cost nothing.
+The default mode uses existing annotation CSVs and RQ3 metrics from
+``artifacts/``. It validates the gold dataset, compares annotations, and runs
+the four-claims and label sensitivity analyses using the Zenodo feature and
+label tables. The default mode and ``--recompute`` make no model API calls.
+See ``docs/reproduction.md`` for the files to prepare after cloning.
 
 Everything it writes goes to ``artifacts/reproduction/``:
 
@@ -37,13 +37,13 @@ OUT = ARTIFACTS / "reproduction"
 
 # where the canonical numbers of each step live
 GOLD = REPO / "data" / "gold150.jsonl"
+ZENODO_RQ3 = REPO.parent / "AIReviewActionAnalysis(Zenodo)" / "address_feature_matrix"
 FEATURES = (
-    REPO.parent
-    / "AIReviewActionAnalysis(Zenodo)"
-    / "address_feature_matrix"
+    ZENODO_RQ3
     / "_selected_reviews_with_features"
     / "reviews_contains_valid_by_LLM_lda_topics_selected.csv"
 )
+LABELS = ZENODO_RQ3 / "labels" / "all_reviews_with_LLM_labels.csv"
 RUN_V2 = ARTIFACTS / "deepseek-paper"
 RUN_V21 = ARTIFACTS / "deepseek-v21"
 RQ3_ALL = ARTIFACTS / "rq3" / "all_reviews"
@@ -322,6 +322,19 @@ def main(argv=None):
     parser.add_argument("--rerun-llm", action="store_true",
                         help="rerun both annotation batches (needs DEEPSEEK_API_KEY)")
     args = parser.parse_args(argv)
+
+    required = [GOLD, FEATURES, LABELS]
+    if not args.rerun_llm:
+        required.extend([RUN_V2 / "annotations.csv", RUN_V21 / "annotations.csv"])
+    if not args.recompute:
+        required.extend([RQ3_ALL / "rq3_metrics.json", RQ3_AI / "rq3_metrics.json"])
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        parser.error(
+            "missing files required for reproduction:\n  "
+            + "\n  ".join(missing)
+            + "\nSee docs/reproduction.md for setup and regeneration commands."
+        )
 
     OUT.mkdir(parents=True, exist_ok=True)
 

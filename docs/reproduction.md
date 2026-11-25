@@ -3,18 +3,35 @@
 `scripts/reproduce_all.py` 把仓库里散在四个地方的数字收进同一个出口，避免写报告时
 从五份文档里各抄一行、抄错一个小数点。
 
-## 1. 三种模式
+## 1. 运行方式
 
 | 命令 | 做什么 | 花钱 | 用时 |
 | --- | --- | --- | --- |
-| `run.py reproduce` | 复用 `artifacts/` 里已有的标注结果与 RQ3 结果，重跑四个确定性的、几十秒的步骤，重新生成 `report.md` / `manifest.json` | 0 | ~15 s |
-| `run.py reproduce --recompute` | 上面全部 + 重训随机森林（RQ3 全部 3,879 条 与 AI-only 2,990 条，含 SHAP） | 0 | 1–3 min |
-| `run.py reproduce --rerun-llm` | 上面全部 + 重跑两个 prompt 的 150 条标注批次（`config/config.deepseek.yaml`、`config/config.deepseek-v21.yaml`） | ~$0.6 | ~40 min |
+| `run.py reproduce` | 使用已有标注 CSV 和 RQ3 指标，重跑数据校验、标注对比、四条结论核对和标签灵敏度分析 | 0 | 随机器而异 |
+| `run.py reproduce --recompute` | 使用已有标注 CSV，重新训练两套随机森林（全量 3,879 条、AI-only 2,990 条），计算 SHAP | 0 | 约 1–3 min |
+| `run.py reproduce --rerun-llm` | 运行两套 DeepSeek 标注配置生成 CSV，使用已有 RQ3 指标 | 取决于缓存和 API 用量 | 无缓存约 40 min（历史实测） |
 
-底层实现是 `scripts/reproduce_all.py`；`run.py reproduce` 只是转发这三个开关，
-两种写法等价。
+两个开关可独立使用，也可组合使用。`run.py reproduce` 将选项传给 `scripts/reproduce_all.py`。
+`--rerun-llm` 需要 `DEEPSEEK_API_KEY`，并遵循两份标注配置中的缓存设置。
 
-`--rerun-llm` 需要 `DEEPSEEK_API_KEY`；前两种模式不联网，适合在答辩机上现场演示。
+### 从 GitHub 克隆后准备文件
+
+先安装 `requirements.txt` 中的依赖。仓库内已有 `data/gold150.jsonl`。将 [Zenodo 附录](https://doi.org/10.5281/zenodo.19562450) 解压到与 `SW-E-P/` 并列的 `AIReviewActionAnalysis(Zenodo)/`。确认附录的 `address_feature_matrix/` 下有这两个文件。
+
+- `_selected_reviews_with_features/reviews_contains_valid_by_LLM_lda_topics_selected.csv`
+- `labels/all_reviews_with_LLM_labels.csv`
+
+`artifacts/` 由 Git 忽略。要复用小组的历史跑批，请从保存了产物的机器复制以下文件，保持它们在 `SW-E-P/` 下的相对路径。
+
+| 文件 | 何时需要 |
+| --- | --- |
+| `artifacts/deepseek-paper/annotations.csv` 和 `artifacts/deepseek-v21/annotations.csv` | 复用已有标注时。缺失时可用 `--rerun-llm` 生成新标注 |
+| `artifacts/rq3/all_reviews/rq3_metrics.json` 和 `artifacts/rq3/ai_only/rq3_metrics.json` | 复用已有 RQ3 指标时。缺失时可用 `--recompute` 本地重训 |
+| `artifacts/rq3/all_reviews/rq3_feature_importance.csv` | 可选。标签灵敏度分析用它加入与历史全量模型的排名对照 |
+
+如果只有两份历史标注 CSV，可用 `python run.py reproduce --recompute` 离线生成报告。
+两类产物都缺失时，准备好 API key 后可执行 `python run.py reproduce --recompute --rerun-llm`。
+入口会在开始运行前列出当前命令所缺的文件。仅需检查安装和数据加载时，可以运行 `python run.py validate-data -c config/config.gold150.yaml`。
 
 ## 2. 产物
 
@@ -28,8 +45,7 @@
 | `conclusions.json` | 四条结论的原始计数 |
 | `label-sensitivity.json` | 两套标签的一致率与 κ、两次 RF 指标、SHAP 名次移动 |
 
-`manifest.json` 里的 `commit` 与两个 sha256 是复现的锚点：只要这两条输入哈希不变，
-`report.md` 里的数字就应该逐字重现。
+`manifest.json` 里的 `commit` 与 SHA-256 可核对代码版本、gold 数据和特征矩阵。复核历史报告时还需使用相同的标注 CSV、RQ3 标签表和指标产物，并核对包版本。
 
 ## 3. 它复现了哪些结论
 
@@ -44,8 +60,8 @@
 
 ## 4. 已知的边界
 
-- **默认模式不重算随机森林**：它读的是 `artifacts/rq3/*/rq3_metrics.json`。若怀疑那份 JSON
-  过期，加 `--recompute`。SHAP 用固定 seed 与固定背景集，所以重算结果逐位一致。
+- 默认模式读取 `artifacts/rq3/*/rq3_metrics.json`。需要用当前数据重训时，加 `--recompute`。
+  重训结果写入 `artifacts/reproduction/rq3-all/` 和 `artifacts/reproduction/rq3-ai/`。RF 和 SHAP 使用固定随机种子，复核时应对照依赖版本。
 - **`--rerun-llm` 不可能逐位复现**：模型服务端的浮点累加与批次调度不受我们控制
   （DEV-04 只跑单次而非论文的五次，DEV-09 换成了 DeepSeek flash）。同配置重跑会出现
   少量标签翻转，这正是 `--repeat` 存在的理由。

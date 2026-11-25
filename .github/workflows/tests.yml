@@ -39,8 +39,7 @@ jobs:
             "scikit-learn==1.3.2" "shap==0.44.1" "matplotlib==3.7.5"
 
       - name: Run the test suite
-        # The suite is offline on purpose: the LLM calls are mocked and the
-        # reproduction bundle is built from committed artefacts.
+        # The suite uses mock LLM clients and test inputs for reproduction.
         run: python -m pytest -q
 
       - name: Check the CLI entry point
